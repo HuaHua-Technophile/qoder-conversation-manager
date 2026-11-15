@@ -154,7 +154,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 ## 备份布局（v1.1.0）
 
 ```
-<db 同目录>/qoder-cm-backups/
+<当前工作目录>/qoder-cm-backups/
 └── move-20261115-135526/
     ├── batch.json                 # 本批汇总：每个 item 的 sid/status/manifest
     └── items/
@@ -170,7 +170,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 
 回滚时按 `row` 逐列写回（只写当前表里存在的列），因此**只影响这一行**。
 
-整库快照仍是 `main.sqlite.bak-<动作>-<时间戳>`，用于 `workspace delete` / `retarget` / 手动 `backup`，保留最近 10 份。
+整库快照存在 `<当前工作目录>/qoder-cm-backups/db/main.sqlite.bak-<动作>-<时间戳>`，用于 `workspace delete` / `retarget` / 手动 `backup`，保留最近 10 份。
 
 `rollback` 三种形态：
 
@@ -178,4 +178,4 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 |---|---|
 | `--manifest <items/xxx.json>` | 只恢复一条会话 |
 | `--batch <batch.json>` | 恢复该批全部条目 |
-| `--backup <main.sqlite.bak-*>` | 整库覆盖（先另存 pre-rollback） |
+| `--backup ./qoder-cm-backups/db/<快照>` | 整库覆盖（先另存 pre-rollback） |

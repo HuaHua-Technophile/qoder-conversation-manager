@@ -78,7 +78,7 @@ python scripts/qoder_sessions.py workspace delete --name VMs --yes --apply
 
 # 备份与回滚
 python scripts/qoder_sessions.py backup --list
-python scripts/qoder_sessions.py rollback --backup <main.sqlite.bak-...> --yes --apply
+python scripts/qoder_sessions.py rollback --backup ./qoder-cm-backups/db/<快照> --yes --apply
 ```
 
 所有命令支持 `--json` 输出结构化结果，方便 agent 解析。
@@ -87,7 +87,7 @@ python scripts/qoder_sessions.py rollback --backup <main.sqlite.bak-...> --yes -
 
 - **默认 dry-run**：所有写命令不加 `--apply` 只打印计划。
 - **允许热写**：Qoder 运行中也能写（WAL 保证一致性），写完重启应用做一次重建验证；要硬性拦截加 `--require-closed`。
-- **按对象备份**：每条被改动的会话单独存一份完整行，支持单条回滚（`rollback --manifest`）或整批回滚（`rollback --batch`）；破坏性操作仍做整库快照，保留最近 10 份。
+- **按对象备份**：每条被改动的会话单独存一份完整行，支持单条回滚（`rollback --manifest`）或整批回滚（`rollback --batch`）；破坏性操作仍做整库快照，保留最近 10 份。备份与临时产物都落在**当前工作目录**的 `qoder-cm-backups/`，不会写进数据库目录。
 - **每条独立事务**：批量操作某条失败不影响其余，结束时按成功/失败计数返回退出码。
 - **影子会话一律拒绝**：`peerOriginSessionId` 非空的会话正文在另一台设备，改了会被同步覆盖。
 - **只操作本地工作区**：同名工作区解析优先取本地那份。

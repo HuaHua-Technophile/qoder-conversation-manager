@@ -18,7 +18,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.1.1'
+VERSION = '1.1.2'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -319,28 +319,57 @@ def apply_filter(rows, conds):
 
 # ---------------------------------------------------------------- 备份
 
-def backup_dir(db_path):
-    return os.path.dirname(db_path)
+BACKUP_ROOT = None   # 由 --backup-dir / 环境变量 / 工作目录 决定
+
+
+def work_root():
+    """备份与临时产物的根目录：默认放在当前工作目录下。"""
+    if BACKUP_ROOT:
+        return BACKUP_ROOT
+    env = os.environ.get('QODER_CM_BACKUP_DIR')
+    if env:
+        return os.path.abspath(env)
+    return os.path.join(os.getcwd(), 'qoder-cm-backups')
+
+
+def ensure_root():
+    root = work_root()
+    os.makedirs(root, exist_ok=True)
+    gi = os.path.join(root, '.gitignore')
+    if not os.path.exists(gi):
+        try:
+            with open(gi, 'w', encoding='utf-8') as f:
+                f.write('*' + chr(10))
+        except OSError:
+            pass
+    return root
+
+
+def db_backup_dir():
+    return os.path.join(work_root(), 'db')
 
 
 def list_backups(db_path):
-    pattern = db_path + '.bak-*'
     items = []
-    for p in glob.glob(pattern):
-        # -wal / -shm 是 SQLite 侧车文件，不是备份
-        if p.endswith('-wal') or p.endswith('-shm'):
-            continue
-        items.append((os.path.getmtime(p), p))
-    items.sort(reverse=True)
-    return [p for _, p in items]
+    d = db_backup_dir()
+    if os.path.isdir(d):
+        for p in glob.glob(os.path.join(d, '*')):
+            if p.endswith('-wal') or p.endswith('-shm'):
+                continue
+            items.append(p)
+    items.sort(key=os.path.getmtime, reverse=True)
+    return items
 
 
 def make_backup(db_path, tag='manual'):
+    ensure_root()
+    d = db_backup_dir()
+    os.makedirs(d, exist_ok=True)
     ts = time.strftime('%Y%m%d-%H%M%S')
-    dst = f'{db_path}.bak-{tag}-{ts}'
+    dst = os.path.join(d, f'main.sqlite.bak-{tag}-{ts}')
     n = 1
     while os.path.exists(dst):
-        dst = f'{db_path}.bak-{tag}-{ts}-{n}'
+        dst = os.path.join(d, f'main.sqlite.bak-{tag}-{ts}-{n}')
         n += 1
     src = sqlite3.connect(db_path)
     try:
@@ -366,16 +395,22 @@ def prune_backups(db_path, keep=BACKUP_KEEP):
 # ------------------------------------------------ 按对象备份（manifest 可单条回滚）
 
 def backup_sets(db_path):
-    root = os.path.join(os.path.dirname(db_path), 'qoder-cm-backups')
+    root = work_root()
     if not os.path.isdir(root):
         return []
-    return sorted((os.path.join(root, d) for d in os.listdir(root)
-                   if os.path.isdir(os.path.join(root, d))),
-                  key=os.path.getmtime, reverse=True)
+    out = []
+    for d in os.listdir(root):
+        p = os.path.join(root, d)
+        if not os.path.isdir(p) or d == 'db':
+            continue
+        if os.path.isdir(os.path.join(p, 'items')) or os.path.isfile(os.path.join(p, 'batch.json')):
+            out.append(p)
+    out.sort(key=os.path.getmtime, reverse=True)
+    return out
 
 
 def new_backup_set(db_path, tag):
-    root = os.path.join(os.path.dirname(db_path), 'qoder-cm-backups')
+    root = ensure_root()
     base = os.path.join(root, f'{tag}-{time.strftime("%Y%m%d-%H%M%S")}')
     n = 1
     while os.path.exists(base):
@@ -498,9 +533,9 @@ def cmd_doctor(args, con, db_path):
     bks = list_backups(db_path)
     if bks:
         age_h = (time.time() - os.path.getmtime(bks[0])) / 3600
-        add('备份', True, f'{len(bks)} 份，最近 {bks[0].split(os.sep)[-1]}（{age_h:.1f} 小时前）')
+        add('备份', True, f'{work_root()}｜{len(bks)} 份，最近 {os.path.basename(bks[0])}（{age_h:.1f} 小时前）')
     else:
-        add('备份', False, '尚无备份，首次写入会自动创建')
+        add('备份', True, f'{work_root()}｜尚无备份，首次写入会自动创建')
 
     if args.json:
         print(json.dumps({'db': db_path, 'version': VERSION, 'checks': results}, ensure_ascii=False, indent=2))
@@ -733,7 +768,7 @@ def rename_export(args, con, db_path):
         out('没有匹配的会话')
         return 0
 
-    outdir = args.out or os.path.join(os.getcwd(), 'qoder-rename-export')
+    outdir = args.out or os.path.join(os.getcwd(), 'qoder-extract')
     os.makedirs(outdir, exist_ok=True)
     index = []
     for r in rows:
@@ -1268,16 +1303,20 @@ def cmd_backup(args, con, db_path):
         files = list_backups(db_path)
         sets = backup_sets(db_path)
         if args.json:
-            print(json.dumps({'snapshots': [{'path': p, 'size': os.path.getsize(p),
+            print(json.dumps({'root': work_root(),
+                              'snapshots': [{'path': p, 'size': os.path.getsize(p),
                                              'mtime': os.path.getmtime(p)} for p in files],
                               'sets': [{'path': p, 'mtime': os.path.getmtime(p),
                                         'batch': os.path.isfile(os.path.join(p, 'batch.json'))}
-                                       for p in sets]}, ensure_ascii=False, indent=2))
+                                       for p in sets],
+                              }, ensure_ascii=False, indent=2))
             return 0
+        out(f'备份根目录: {work_root()}')
         if not files and not sets:
             out('尚无备份')
             return 0
         if files:
+            out('')
             out(f'整库快照 {len(files)} 份（保留最近 {BACKUP_KEEP} 份）')
             for p in files:
                 out(f"  {fmt_ms(os.path.getmtime(p)*1000)}  {os.path.getsize(p)/1048576:>7.1f} MB  {os.path.basename(p)}")
@@ -1390,6 +1429,8 @@ def build_parser():
     p.add_argument('--json', action='store_true', help='输出结构化 JSON')
     p.add_argument('--require-closed', action='store_true',
                    help='Qoder 运行时拒绝写入（默认允许热写，写完重启验证）')
+    p.add_argument('--backup-dir',
+                   help='备份与临时产物根目录（默认 <当前工作目录>/qoder-cm-backups）')
     p.add_argument('--version', action='version', version=f'qoder-conversation-manager {VERSION}')
     sub = p.add_subparsers(dest='cmd', required=True)
 
@@ -1398,6 +1439,8 @@ def build_parser():
     common.add_argument('--db', default=argparse.SUPPRESS)
     common.add_argument('--json', action='store_true', default=argparse.SUPPRESS)
     common.add_argument('--require-closed', action='store_true', default=argparse.SUPPRESS)
+    common.add_argument('--backup-dir', default=argparse.SUPPRESS,
+                        help='备份与临时产物根目录（默认 ./qoder-cm-backups）')
 
     sub.add_parser('doctor', parents=[common], help='体检：库/表/进程/路径/影子/备份')
 
@@ -1474,9 +1517,11 @@ def build_parser():
 
 
 def main(argv=None):
-    global CUSTOM_DB
+    global CUSTOM_DB, BACKUP_ROOT
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, 'backup_dir', None):
+        BACKUP_ROOT = os.path.abspath(args.backup_dir)
     default = None
     for cand in qoder_db_candidates():
         if os.path.isfile(cand):

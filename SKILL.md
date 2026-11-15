@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.1.1
+version: 1.1.2
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -92,7 +92,7 @@ python <skill>/scripts/qoder_sessions.py list --since 2026-11-01 --limit 20
 第一步，导出完整历史：
 
 ```bash
-python <skill>/scripts/qoder_sessions.py rename --export --out ./qoder-rename-export
+python <skill>/scripts/qoder_sessions.py rename --export --out ./qoder-extract
 # 可限定范围
 python <skill>/scripts/qoder_sessions.py rename --export --filter "status = active" --out ./exp
 ```
@@ -172,12 +172,13 @@ python <skill>/scripts/qoder_sessions.py rollback --batch "<备份组>/batch.jso
 # 整库快照（手动，或破坏性操作前）
 python <skill>/scripts/qoder_sessions.py backup --list
 python <skill>/scripts/qoder_sessions.py backup
-python <skill>/scripts/qoder_sessions.py rollback --backup <main.sqlite.bak-*> --yes --apply
+python <skill>/scripts/qoder_sessions.py rollback --backup ./qoder-cm-backups/db/<快照> --yes --apply
 ```
 
-- `rename` / `move` 每次落盘会新建一组 `qoder-cm-backups/<动作>-<时间戳>/`：`items/` 下每条会话一份完整行，`batch.json` 汇总。**单条回滚只动那一行**，不影响同批其他会话。
-- `backup` / `workspace delete` / `workspace retarget` / `rollback --backup` 仍用整库快照 `main.sqlite.bak-*`，保留最近 10 份。
+- `rename` / `move` 每次落盘会在**当前工作目录**新建一组 `qoder-cm-backups/<动作>-<时间戳>/`：`items/` 下每条会话一份完整行，`batch.json` 汇总。**单条回滚只动那一行**，不影响同批其他会话。
+- `backup` / `workspace delete` / `workspace retarget` / `rollback --backup` 用整库快照，存在 `./qoder-cm-backups/db/`，保留最近 10 份。
 - `rollback --backup` 会先把当前库另存为 `bak-pre-rollback-*` 再覆盖。
+- 备份根目录可用 `--backup-dir` 或环境变量 `QODER_CM_BACKUP_DIR` 改到别处；根目录自带 `.gitignore`（内容为 `*`），不会被 git 提交。
 
 ## 典型工作流
 
@@ -212,9 +213,9 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 
 1. **默认 dry-run**：所有写命令不加 `--apply` 只打印计划，不落盘。
 2. **允许热写**：Qoder 运行中也能写（WAL 保证一致性），写完必须重启应用做一次重建验证；要硬性拦截用 `--require-closed`。
-3. **按对象备份**：每条被改动的会话在 `qoder-cm-backups/<动作>-<时间戳>/items/` 下存一份完整行，`batch.json` 汇总，支持单条或整批回滚。
+3. **按对象备份**：每条被改动的会话在 `./qoder-cm-backups/<动作>-<时间戳>/items/` 下存一份完整行，`batch.json` 汇总，支持单条或整批回滚。备份与临时产物都放在**当前工作目录**，不写入数据库目录。
 4. **每条独立事务**：批量操作某条失败只影响它自己，其余继续；结束后按成功/失败计数返回退出码。
-5. **破坏性操作仍做整库快照**（`main.sqlite.bak-*`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
+5. **破坏性操作仍做整库快照**（`./qoder-cm-backups/db/`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
 6. **影子会话一律拒绝**改名与迁移，并在输出里说明原因。这是 Qoder 特有的数据形态——`peerOriginSessionId` 非空的会话正文在另一台设备，本机只有元数据，改了会被同步覆盖。
 7. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
 8. **删除只做软删除**（进回收站），且必须 `--yes`。
