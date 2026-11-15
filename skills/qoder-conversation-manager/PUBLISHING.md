@@ -6,10 +6,10 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，Release 含两个安装包 |
+| GitHub | ✅ 已发布 v1.3.5 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，[Release v1.3.5](https://github.com/HuaHua-Technophile/qoder-conversation-manager/releases/tag/v1.3.5) 含两个安装包 |
 | SkillHub（skillhub.cn） | ✅ 已上架 v1.3.3<br>⏳ v1.3.5 审核中 | CLI 发布，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标与分类（开发编程）均已就位 |
-| skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核：技能页提示不在该仓库下，发布者页 404。该站按 `npx skills add` 安装量索引，无手动提交入口；根目录 SKILL.md 的布局可能不被识别为仓库内的 skill。 |
-| WorkBuddy 开放平台 | ⏳ 待提交 | 需开发者认证；提审有配额（当日 5 次 / 当月 20 次） |
+| skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已改用 `skills/<name>/` 布局，等它下次扫描 |
+| WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 1.3.5 | 能力 ID `os_f2f623a10e63b114`，公开。**今日提审额度已满 5/5**（当月 5/20），次日恢复后可传 `-dir` 包 |
 | Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
 | skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
 
@@ -162,6 +162,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 8. 付费为可选项：过审后在「收入变现」开通收款账户（微信签约）。注意计费模式一经发布不可改。
 
 > 提审有额度：页面显示「当日 5 次、当月 20 次」，改完再传，别浪费在格式错误上。
+
+**已上架后更新版本**：技能列表卡片右侧有「更新版本」，传新的 `-dir` 包即可，能力 ID（如 `os_f2f623a10e63b114`）与 slug 都不变。同样消耗提审额度——额度用尽时页面顶部显示 `今日 技能提审 5/5`，需次日再传。
 
 ## 渠道三：Qoder
 
