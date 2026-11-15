@@ -60,3 +60,53 @@ jobs:
           files: dist/*.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  # 放在同一个 workflow 里，而不是另建 release-triggered workflow：
+  # 用 GITHUB_TOKEN 创建的 Release 不会再触发其它 workflow（GitHub 防递归）。
+  skillhub:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install SkillHub CLI
+        run: |
+          curl -fsSL https://skillhub.cn/install/install.sh | bash -s -- --cli-only
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Login
+        env:
+          SKILLHUB_KEY: ${{ secrets.SKILLHUB_KEY }}
+        run: |
+          if [ -z "$SKILLHUB_KEY" ]; then
+            echo "::error::缺少 SKILLHUB_KEY，请先在仓库 Settings → Secrets 里配置"
+            exit 1
+          fi
+          skillhub login --key "$SKILLHUB_KEY" --host https://api.skillhub.cn
+          skillhub auth whoami
+
+      - name: Publish to SkillHub
+        env:
+          CHANGELOG: ${{ github.event.release.name }}
+        run: |
+          if [ -z "$CHANGELOG" ]; then CHANGELOG="发布 $(git describe --tags --always)"; fi
+          skillhub publish skills/qoder-conversation-manager \
+            --host https://api.skillhub.cn \
+            --changelog "$CHANGELOG"
+

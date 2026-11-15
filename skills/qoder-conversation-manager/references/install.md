@@ -40,7 +40,7 @@ qoder-conversation-manager/
 cp -r "<源>/qoder-conversation-manager" "<宿主技能目录>/"
 ```
 
-复制后让宿主重新加载技能列表：多数宿主重启会话即可，部分提供 `/skills reload`。
+复制后让宿主重新加载技能列表：多数宿主重启任务即可，部分提供 `/skills reload`。
 
 ## 验证
 
@@ -80,7 +80,7 @@ cp -r "$SRC" "$HOME/.qoder/skills/"
 
 | 现象 | 处理 |
 |---|---|
-| 宿主技能列表没有出现 | 检查目录名与 frontmatter 的 `name` 一致；重启会话或执行宿主的技能重载命令 |
+| 宿主技能列表没有出现 | 检查目录名与 frontmatter 的 `name` 一致；重启任务或执行宿主的技能重载命令 |
 | 运行报 `未找到 Qoder 数据库` | 用 `--db` 指向 `main.sqlite`；确认 Qoder 已安装并登录过 |
 | 中文输出乱码 | 终端编码设为 UTF-8（`chcp 65001`） |
 | `doctor` 提示工作区路径不可达 | 该工作区根目录可能在外接盘或另一台设备上，属正常 |

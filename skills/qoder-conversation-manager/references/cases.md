@@ -1,8 +1,8 @@
 # 真实案例
 
-两段实操，均在本机 Qoder（Windows，286→288 条会话）上完成。
+两段实操，均在本机 Qoder（Windows，286→288 条任务）上完成。
 
-## 案例一：27 条会话按完整历史重命名
+## 案例一：27 条任务按完整历史重命名
 
 ### 背景
 
@@ -16,10 +16,10 @@ python <skill>/scripts/qoder_sessions.py doctor
 python <skill>/scripts/qoder_sessions.py list --include-peer --limit 10
 ```
 
-体检发现 288 条里 260 条是 `peer` 影子会话（来自笔记本 HuaHua-Book），本机只有元数据、没有正文。
+体检发现 288 条里 260 条是 `peer` 影子任务（来自笔记本 HuaHua-Book），本机只有元数据、没有正文。
 **这些不能改**——正文在对端，改了会被同步覆盖。
 
-最终可操作的是 28 条本机会话。
+最终可操作的是 28 条本机任务。
 
 ### 第一版做错了什么
 
@@ -48,7 +48,7 @@ python <skill>/scripts/qoder_sessions.py rename --export --out ./exp
 | 修复 Tailscale RDP 中继绕路 | 排除 Clash 代理定位 RDP 链路丢包 |
 
 「局域网远程控制方案」这条，真正的收尾是查出 Apollo 部署里的 Any/Any 规则和明文密码；
-「闲鱼2TB硬盘审计」的核心是从标签识破官翻盘。这些都发生在对话中后段。
+「闲鱼2TB硬盘审计」的核心是从标签识破官翻盘。这些都发生在任务中后段。
 
 ### 落盘与校验
 
@@ -57,13 +57,13 @@ python <skill>/scripts/qoder_sessions.py rename --import titles.json           #
 python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply
 ```
 
-写入 27 条，`PRAGMA integrity_check` 为 `ok`，与备份逐行 diff 确认**只这 27 行变化**，影子会话零改动。
+写入 27 条，`PRAGMA integrity_check` 为 `ok`，与备份逐行 diff 确认**只这 27 行变化**，影子任务零改动。
 
 教训：**标题必须读全文**。摘要是省事，但省掉的正是判断依据。
 
 ---
 
-## 案例二：按主题把会话归入工作区
+## 案例二：按主题把任务归入工作区
 
 ### 目标工作区
 
@@ -92,7 +92,7 @@ python <skill>/scripts/qoder_sessions.py move --to NAS --ids c7e0c1a7,d447aa22,b
 
 ### 最终归属
 
-| 工作区 | 根路径 | 会话数 |
+| 工作区 | 根路径 | 任务数 |
 |---|---|---|
 | Cross-Platform | `\\huahua-book\B\Cross-Platform` | 9（另 1 条在回收站） |
 | NAS | `E:\B\NAS` | 8 |
@@ -100,12 +100,12 @@ python <skill>/scripts/qoder_sessions.py move --to NAS --ids c7e0c1a7,d447aa22,b
 
 ### 中途踩的坑
 
-1. **漏移一条**：`e3d0af7b` 是筛查之后（当天 10:34）才新建的会话，不在候选名单里。用户发现后补移。
+1. **漏移一条**：`e3d0af7b` 是筛查之后（当天 10:34）才新建的任务，不在候选名单里。用户发现后补移。
    → 批量操作前重新 `list` 一次，别用旧清单。
 2. **备份同名覆盖**：两次迁移在同一秒执行，`bak-before-move-20261115-110456` 被后一次覆盖。
    → 批量操作前先手工 `backup` 一次作为锚点。
 3. **`execution_target_json` 的 id 猜不出来**：本地工作区的值是 `ws_<64位哈希>`，无法由路径复现。
-   最终策略是「复用目标工作区已有会话的值，新建工作区才用工作区 UUID」，实测应用接受且不报错。
-4. **路由器类会话的归属有歧义**：`小米路由器刷 SSH 装 lucky 远程开机` 看标题像 NAS 相关，
+   最终策略是「复用目标工作区已有任务的值，新建工作区才用工作区 UUID」，实测应用接受且不报错。
+4. **路由器类任务的归属有歧义**：`小米路由器刷 SSH 装 lucky 远程开机` 看标题像 NAS 相关，
    读全文才发现唤醒目标是台式机 HUAHUA-PC，路由器只是常开哨兵，与 `E:\B\NAS` 无关。
    → 归类前先看正文，别被标题骗。

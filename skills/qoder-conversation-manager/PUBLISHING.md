@@ -16,14 +16,14 @@
 ## 提交材料
 
 - **标识名**：`qoder-conversation-manager`（小写字母、数字、连字符）
-- **中文名**：`Qoder会话管理`　**英文名**：`Qoder Conversation Manager`
+- **中文名**：`Qoder任务管理`　**英文名**：`Qoder Conversation Manager`
 - **版本**：见 `SKILL.md` 的 `version`
 - **分类**：开发工具 / 效率工具 / 数据管理
 - **许可证**：MIT
 
 **中文简介**
 
-> 管理 Qoder 桌面端会话与工作区：按完整对话历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。
+> 管理 Qoder 桌面端任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。
 
 **英文简介**
 
@@ -32,14 +32,14 @@
 **适用场景**
 
 - 侧栏标题只反映第一句话，批量重命名
-- 把同一主题的对话归入对应工作区（含文件、记忆、产出）
+- 把同一主题的任务归入对应工作区（含文件、记忆、产出）
 - 新建 / 调整 / 清理工作区
 - 改库前体检与回滚
 
 **限制**
 
 - 仅 Windows；Python 3.9+
-- 只操作本机 Qoder 数据；跨设备影子会话只读
+- 只操作本机 Qoder 数据；跨设备影子任务只读
 - 全局记忆 `~/.qoder/memory/` 不随迁移变动
 
 ## 渠道一：SkillHub（skillhub.cn）
@@ -70,12 +70,12 @@ python3 ~/.skillhub/skills_store_cli.py auth whoami
 
 ```yaml
 slug: qoder-conversation-manager      # 全网唯一，kebab-case
-displayName: Qoder会话管理              # 驼峰，平台用
+displayName: Qoder任务管理              # 驼峰，平台用
 summary: ……                            # 平台列表页简介
 iconUrl: https://…png                  # 图标，先调 skill-icons/upload 拿
 categoryIds: [dev-programming]         # 分类 key 数组
 name: qoder-conversation-manager      # 下划线族，WorkBuddy 用
-display_name: Qoder会话管理
+display_name: Qoder任务管理
 ```
 
 **发布**
@@ -161,7 +161,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
    |---|---|
    | `name` | `qoder-conversation-manager` |
    | `version` | 与发布版本一致 |
-   | `display_name` | `Qoder会话管理`（中文展示名） |
+   | `display_name` | `Qoder任务管理`（中文展示名） |
    | `display_name_en` | `Qoder Conversation Manager` |
    | `description_zh` | 中文描述 |
    | `description_en` | 英文描述 |
@@ -254,4 +254,4 @@ gh workflow run Release --repo HuaHua-Technophile/qoder-conversation-manager -f 
 - [ ] frontmatter 必填字段齐全：WorkBuddy 要 `name`/`display_name`/`display_name_en`/`description`/`description_zh`/`description_en`/`version`/`author`；SkillHub 要 `slug`/`version`/`displayName`
 - [ ] 用到 `iconUrl` 时确认地址可达（`curl -I`）
 - [ ] 打 tag 后看 Actions 跑绿，再处理 SkillHub / WorkBuddy 两个外部渠道
-- [ ] 提交后用新会话实测：能识别何时触发、命令能跑通
+- [ ] 提交后用新任务实测：能识别何时触发、命令能跑通

@@ -17,8 +17,8 @@
 |---|---|
 | `session_id` | UUID 主键 |
 | `title` | 侧栏显示标题 |
-| `cwd` | 会话语义上的工作目录。挂到工作区后**必须等于该工作区根路径** |
-| `workspace_id` | 归属工作区；`NULL` 表示游离会话。侧栏按此列分组（有索引 `chat_sessions_workspace_updated`） |
+| `cwd` | 任务语义上的工作目录。挂到工作区后**必须等于该工作区根路径** |
+| `workspace_id` | 归属工作区；`NULL` 表示游离任务。侧栏按此列分组（有索引 `chat_sessions_workspace_updated`） |
 | `extra_json` | 元数据。标题相关：`titleSource`(`provisional`/`fallback`/`ai`/`custom`)、`titleResolved`、`titleRevision`、`provisionalTitle` |
 | `execution_target_json` | 执行目标：`{mode, host, workspace:{id,path}}`。`mode` 为 `local` 或 `peer` |
 | `created_at` / `updated_at` | 毫秒时间戳 |
@@ -81,8 +81,8 @@ UPDATE chat_sessions
 
 `execution_target_json.workspace.id` 的取值规则：
 
-1. 目标工作区若已有会话，读取它们的 `workspace.id`，取出现次数最多的那个（同一本地工作区的值稳定）。
-2. 目标工作区是新建的、还没有任何会话时，退回使用工作区 UUID。
+1. 目标工作区若已有任务，读取它们的 `workspace.id`，取出现次数最多的那个（同一本地工作区的值稳定）。
+2. 目标工作区是新建的、还没有任何任务时，退回使用工作区 UUID。
 
 原因：本地工作区的 `workspace.id` 形如 `ws_<64 位十六进制>`，由 Qoder 原生层生成。实测 md5 / sha1 / sha256 / sha3_256 / blake2b / blake2s、UTF-8 与 UTF-16LE 编码、大小写/斜杠/尾斜杠/`\\?\` 前缀/JSON 转义等各种归一化组合，**都无法由路径或工作区 UUID 复现该值**，Electron 层（app.asar）中也没有生成代码。因此只能复用或退让，不要臆造。
 
@@ -119,7 +119,7 @@ SELECT title, json_extract(extra_json,'$.titleSource') AS src,
        json_extract(extra_json,'$.titleResolved') AS resolved
   FROM chat_sessions WHERE session_id LIKE 'xxxx%';
 
--- 工作区会话统计
+-- 工作区任务统计
 SELECT w.name, w.workspace_source, w.root_paths_json,
        (SELECT count(*) FROM chat_sessions c
          WHERE c.workspace_id=w.workspace_id AND c.deleted_at IS NULL) AS n
@@ -132,7 +132,7 @@ PRAGMA integrity_check;
 ## 已知坑
 
 1. **同名工作区**：`NAS`、`VMs`、`Cross-Platform` 这类名字常有多份（本地 + 各对端）。按名称操作时必须优先本地，否则会误操作投影。
-2. **影子会话**：`peerOriginSessionId` 非空的会话，正文不在本机，改了标题或归属会被对端同步覆盖，且它的 `cwd` 可能指向本机不存在的盘符。
+2. **影子任务**：`peerOriginSessionId` 非空的任务，正文不在本机，改了标题或归属会被对端同步覆盖，且它的 `cwd` 可能指向本机不存在的盘符。
 3. **cwd 与根路径不一致**：历史手工改动容易只改 `workspace_id`，导致侧栏归了组但执行目录还是旧的。本技能三处同改。
 4. **`additional_direcotries`**（原文拼写如此）通常是 `{}`，迁移时无需改动。
 5. **应用运行中写库**：WAL 允许并发写，但 Qoder 可能用内存缓存回写，导致改动被覆盖。所以写操作要求应用退出。
@@ -143,7 +143,7 @@ PRAGMA integrity_check;
 
 Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截，只打 `[WARN]`：
 
-1. 写库（每条会话独立事务，失败隔离）。
+1. 写库（每条任务独立事务，失败隔离）。
 2. 立即回读三处字段（`workspace_id` / `cwd` / `execution_target_json.workspace.path`）或（`title` / `extra_json.titleSource`）校验。
 3. 提示用户重启 Qoder，让侧栏按数据库重建。
 
@@ -158,7 +158,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 └── move-20261115-135526/
     ├── batch.json                 # 本批汇总：每个 item 的 sid/status/manifest
     └── items/
-        └── chat_sessions-<sid>.json   # 该会话改动前的完整行（所有列）
+        └── chat_sessions-<sid>.json   # 该任务改动前的完整行（所有列）
 ```
 
 `items/*.json` 结构：
@@ -176,7 +176,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 
 | 参数 | 作用 |
 |---|---|
-| `--manifest <items/xxx.json>` | 只恢复一条会话 |
+| `--manifest <items/xxx.json>` | 只恢复一条任务 |
 | `--batch <batch.json>` | 恢复该批全部条目 |
 | `--backup ./qoder-cm-backups/db/<快照>` | 整库覆盖（先另存 pre-rollback） |
 
@@ -187,7 +187,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 ~/.qoder/
 ├── projects/
 │   └── <cwd 编码>/
-│       ├── <sid>.jsonl        # 会话正文
+│       ├── <sid>.jsonl        # 任务正文
 │       ├── <sid>/             # 附件、子代理、工具结果
 │       └── memory/            # 项目级记忆
 │           ├── MEMORY.md
@@ -199,7 +199,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 **cwd 编码**：把 cwd 里的非 `[A-Za-z0-9._-]` 字符替换成 `-`。
 例：`D:\HuaHua\Documents\Qoder\2026-11-15\11679d46` → `D--HuaHua-Documents-Qoder-2026-11-15-11679d46`。
 
-**关键事实**：目录名在会话创建时生成，**改 `cwd` 不会自动更新**。应用按 sid 扫描 `projects/*`，所以不搬文件也不会丢历史；但项目记忆挂在旧编码目录下，迁走后新项目读不到。
+**关键事实**：目录名在任务创建时生成，**改 `cwd` 不会自动更新**。应用按 sid 扫描 `projects/*`，所以不搬文件也不会丢历史；但项目记忆挂在旧编码目录下，迁走后新项目读不到。
 
 **产出索引**：
 
@@ -216,6 +216,6 @@ SELECT f.path, f.operation, s.roots_json
 
 | 对象 | 处理 | 失败时 |
 |---|---|---|
-| 会话 jsonl / 子目录 | 移动到新编码目录 | 该条标记失败，已搬部分回滚 |
+| 任务 jsonl / 子目录 | 移动到新编码目录 | 该条标记失败，已搬部分回滚 |
 | 项目记忆 | 合并（MEMORY.md 去重追加） | 冲突另存带时间戳文件 |
 | 产出 | 移动 + 旧路径硬链接 | 跨盘退回复制；再失败只记 `link:false` |

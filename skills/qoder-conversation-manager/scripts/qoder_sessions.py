@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Qoder 会话管理：列出 / 重命名 / 迁移工作区 / 管理工作区 / 备份回滚 / 体检。
+"""Qoder 任务管理：列出 / 重命名 / 迁移工作区 / 管理工作区 / 备份回滚 / 体检。
 
 只依赖 Python 3.9+ 标准库。只操作 Qoder 本地数据（Windows）。
 所有写操作默认 dry-run，必须显式 --apply 才落盘；落盘前自动整库备份。
@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.3.6'
+VERSION = '1.3.7'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -474,7 +474,7 @@ def restore_row(w, payload):
 
 # ---------------------------------------------------------------- doctor
 
-CHECK_NAMES = ['数据库', 'WAL 状态', '表结构', 'Qoder 进程', '工作区路径', '影子会话', '备份']
+CHECK_NAMES = ['数据库', 'WAL 状态', '表结构', 'Qoder 进程', '工作区路径', '影子任务', '备份']
 
 
 def cmd_doctor(args, con, db_path):
@@ -486,7 +486,7 @@ def cmd_doctor(args, con, db_path):
     # 1 数据库
     try:
         n_sess = con.execute('select count(*) from chat_sessions').fetchone()[0]
-        add('数据库', True, f'可读，会话 {n_sess} 条')
+        add('数据库', True, f'可读，任务 {n_sess} 条')
     except sqlite3.Error as ex:
         add('数据库', False, str(ex))
 
@@ -522,15 +522,15 @@ def cmd_doctor(args, con, db_path):
     add('工作区路径', not bad,
         f'本地工作区 {len(local)} 个，路径均可达' if not bad else f'不可达: {", ".join(bad[:4])}')
 
-    # 6 影子会话
+    # 6 影子任务
     try:
         rows = list(con.execute('select session_id, extra_json, execution_target_json from chat_sessions'))
         peers = sum(1 for r in rows if is_peer_type(r, {'extra_json': r['extra_json'],
                                                         'execution_target_json': r['execution_target_json']}))
         ratio = (peers / len(rows) * 100) if rows else 0
-        add('影子会话', True, f'{peers}/{len(rows)} 条（{ratio:.0f}%），迁移与改名会自动跳过')
+        add('影子任务', True, f'{peers}/{len(rows)} 条（{ratio:.0f}%），迁移与改名会自动跳过')
     except sqlite3.Error as ex:
-        add('影子会话', False, str(ex))
+        add('影子任务', False, str(ex))
 
     # 7 备份
     bks = list_backups(db_path)
@@ -552,8 +552,8 @@ def cmd_doctor(args, con, db_path):
                 want_dir = os.path.join(projects_root(), encode_cwd(r['cwd']))
                 if os.path.normcase(cur) != os.path.normcase(want_dir):
                     mismatch += 1
-            add('会话文件', missing == 0,
-                f'{len(drows)} 条会话均有正文文件' if missing == 0
+            add('任务文件', missing == 0,
+                f'{len(drows)} 条任务均有正文文件' if missing == 0
                 else f'{missing}/{len(drows)} 条缺正文文件')
             add('目录一致性', mismatch == 0,
                 '项目目录与 cwd 全部一致' if mismatch == 0
@@ -571,7 +571,7 @@ def cmd_doctor(args, con, db_path):
                 f'{len(mem_dirs)} 个项目共 {sum(n for _, n in mem_dirs)} 个记忆文件'
                 if mem_dirs else '尚无项目记忆')
             n_out = con.execute('select count(distinct session_id) from turn_file_change_sets').fetchone()[0]
-            add('产出索引', True, f'{n_out} 条会话有产出记录')
+            add('产出索引', True, f'{n_out} 条任务有产出记录')
         except Exception as ex:
             add('深度检查', False, str(ex))
 
@@ -640,7 +640,7 @@ def cmd_list(args, con, db_path):
         return 0
 
     if not rows:
-        out('没有匹配的会话')
+        out('没有匹配的任务')
         return 0
     out(f'共 {len(rows)} 条')
     out('')
@@ -742,7 +742,7 @@ def cap(t, n):
 
 
 def write_shards(outdir, index, n):
-    """LPT（最长处理时间优先）按字数把会话均衡分到 n 片，供子智能体并行。"""
+    """LPT（最长处理时间优先）按字数把任务均衡分到 n 片，供子智能体并行。"""
     items = sorted(index, key=lambda x: -int(x.get('chars') or 0))
     bins = [[] for _ in range(n)]
     tot = [0] * n
@@ -789,7 +789,7 @@ def rename_export(args, con, db_path):
         want = {s.strip() for s in args.ids.split(',') if s.strip()}
         missing = [w for w in want if not any(r['session_id'].startswith(w) for r in rows)]
         if missing:
-            out(f"[WARN] 这些 ID 未匹配到会话：{', '.join(missing)}")
+            out(f"[WARN] 这些 ID 未匹配到任务：{', '.join(missing)}")
         rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
     for r in rows:
         w = ws_map.get(r['workspace_id'])
@@ -803,7 +803,7 @@ def rename_export(args, con, db_path):
         rows = rows[:args.limit]
 
     if not rows:
-        out('没有匹配的会话')
+        out('没有匹配的任务')
         return 0
 
     outdir = args.out or os.path.join(os.getcwd(), 'qoder-extract')
@@ -821,7 +821,7 @@ def rename_export(args, con, db_path):
             f"UPDATED_AT: {fmt_ms(r['updated_at'])}",
             f"MSG_COUNT: {msgs}",
             f"USER_TURNS: {users}",
-            '===== 完整对话历史（时间顺序）=====',
+            '===== 完整任务历史（时间顺序）=====',
             render_transcript(con, r['session_id'], args.user_cap, args.assist_cap),
         ]
         path = os.path.join(outdir, r['session_id'][:8] + '.txt')
@@ -845,7 +845,7 @@ def rename_export(args, con, db_path):
         print(json.dumps({'out_dir': outdir, 'count': len(index), 'items': index,
                           'shards': shard_info}, ensure_ascii=False, indent=2))
         return 0
-    out(f'已导出 {len(index)} 个会话的完整历史 -> {outdir}')
+    out(f'已导出 {len(index)} 个任务的完整历史 -> {outdir}')
     out(f'索引文件: {os.path.join(outdir, "index.json")}')
     if shard_info:
         out('')
@@ -893,10 +893,10 @@ def rename_apply(args, con, db_path):
                 skipped.append((sid[:8], '库中不存在', ''))
                 continue
         if row['_peer']:
-            skipped.append((sid[:8], '影子会话（正文在另一台设备），已拒绝', ''))
+            skipped.append((sid[:8], '影子任务（正文在另一台设备），已拒绝', ''))
             continue
         if row['deleted_at']:
-            skipped.append((sid[:8], '会话已删除，已跳过', ''))
+            skipped.append((sid[:8], '任务已删除，已跳过', ''))
             continue
         raw_title = it.get('new_title')
         cat = str(it.get('category') or '').strip()
@@ -917,7 +917,7 @@ def rename_apply(args, con, db_path):
             continue
         plan.append((row['session_id'], row['title'], title))
 
-    # 允许不同会话重名，不做去重告警
+    # 允许不同任务重名，不做去重告警
 
     if args.json:
         print(json.dumps({'plan': [{'sid': s, 'old': o, 'new': n} for s, o, n in plan],
@@ -989,7 +989,7 @@ def rename_apply(args, con, db_path):
     out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
     out(f'备份与清单: {base}')
     if not metadata_only:
-        out('已按默认策略搬运：会话文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
+        out('已按默认策略搬运：任务文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
         if removed:
             out(f'已清理 {len(removed)} 个空项目目录')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
@@ -1003,7 +1003,7 @@ def rename_apply(args, con, db_path):
 # ---------------------------------------------------------------- move
 
 def infer_et_id(con, target_ws_id, target_root):
-    """优先复用目标工作区已有会话的 execution_target_json.workspace.id。"""
+    """优先复用目标工作区已有任务的 execution_target_json.workspace.id。"""
     ids = {}
     for r in con.execute('select execution_target_json from chat_sessions where workspace_id=?', (target_ws_id,)):
         et = load_json(r[0])
@@ -1053,7 +1053,7 @@ def project_sessions(proj_dir):
 
 
 def clean_orphan_dirs(candidates, keep=()):
-    """删除已经没有任何会话的项目目录；keep 里的目标目录永不删。"""
+    """删除已经没有任何任务的项目目录；keep 里的目标目录永不删。"""
     removed = []
     seen = set()
     keep_norm = {os.path.normcase(k) for k in keep if k}
@@ -1157,7 +1157,7 @@ def merge_memory(src_dir, dst_dir):
 
 
 def is_dedicated_cwd(cwd, sid):
-    """末段等于会话 ID 前 8 位时，视为该会话独占的临时工作目录。"""
+    """末段等于任务 ID 前 8 位时，视为该任务独占的临时工作目录。"""
     if not cwd or not sid:
         return False
     return os.path.basename(os.path.normpath(cwd)).lower() == sid[:8].lower()
@@ -1188,7 +1188,7 @@ WRITE_TOOLS = ('Write', 'Edit', 'MultiEdit', 'NotebookEdit')
 
 
 def tool_output_paths(jsonl_path, root):
-    """从会话正文里抽 Write/Edit 类工具写过的、位于 root 下的绝对路径。"""
+    """从任务正文里抽 Write/Edit 类工具写过的、位于 root 下的绝对路径。"""
     out = set()
     if not jsonl_path or not os.path.isfile(jsonl_path):
         return out
@@ -1222,7 +1222,7 @@ def tool_output_paths(jsonl_path, root):
 
 
 def session_outputs(con, sid, extra=None, old_cwd=None):
-    """该会话涉及的文件（绝对源路径）。DB 索引 + 调用方给的正文路径两路合并。"""
+    """该任务涉及的文件（绝对源路径）。DB 索引 + 调用方给的正文路径两路合并。"""
     found = {}
     try:
         rows = con.execute(
@@ -1259,9 +1259,9 @@ def session_outputs(con, sid, extra=None, old_cwd=None):
 
 def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=False,
                            memory_mode='always'):
-    """搬会话文件、项目记忆与产出；返回记录列表。
+    """搬任务文件、项目记忆与产出；返回记录列表。
 
-    memory_mode: always=总是合并；auto=仅当旧项目再无其他会话时合并。
+    memory_mode: always=总是合并；auto=仅当旧项目再无其他任务时合并。
     """
     recs = []
     if metadata_only:
@@ -1297,7 +1297,7 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
                 recs.append({'kind': 'memory', 'src': mem_old,
                              'dst': os.path.join(new_proj, 'memory'),
                              'status': 'skipped-shared',
-                             'reason': f'旧项目仍有 {project_sessions(old_proj) - 1} 条其他会话'})
+                             'reason': f'旧项目仍有 {project_sessions(old_proj) - 1} 条其他任务'})
 
     for src in session_outputs(con, sid, extra_paths, old_cwd):
         try:
@@ -1387,7 +1387,7 @@ def cmd_move(args, con, db_path):
         want = [s.strip() for s in args.ids.split(',') if s.strip()]
         missing = [w for w in want if not any(r['session_id'].startswith(w) for r in rows)]
         if missing:
-            out(f"[WARN] 这些 ID 未匹配到会话：{', '.join(missing)}")
+            out(f"[WARN] 这些 ID 未匹配到任务：{', '.join(missing)}")
         rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
     if args.filter:
         try:
@@ -1398,7 +1398,7 @@ def cmd_move(args, con, db_path):
     plan = [r for r in rows if r['workspace_id'] != ws['workspace_id']]
 
     if not plan:
-        out('没有需要迁移的会话')
+        out('没有需要迁移的任务')
         return 0
 
     if args.json:
@@ -1441,7 +1441,7 @@ def cmd_move(args, con, db_path):
             w0.close()
         out(f"已创建工作区: {pending['name']} -> {pending['path']}")
 
-    # 按对象备份：每条会话存一份完整行，可单条回滚
+    # 按对象备份：每条任务存一份完整行，可单条回滚
     base = new_backup_set(db_path, 'move')
     metadata_only = getattr(args, 'metadata_only', False)
 
@@ -1457,7 +1457,7 @@ def cmd_move(args, con, db_path):
             sid = r['session_id']
             files = []
             try:
-                # 先搬文件（会话正文/子目录/项目记忆/产出），再改库
+                # 先搬文件（任务正文/子目录/项目记忆/产出），再改库
                 files = move_files_for_session(con, sid, r['cwd'], root, base, metadata_only)
                 row = con.execute('select * from chat_sessions where session_id=?', (sid,)).fetchone()
                 payload = {'version': 1, 'table': 'chat_sessions', 'key_column': 'session_id',
@@ -1512,7 +1512,7 @@ def cmd_move(args, con, db_path):
     out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
     out(f'备份与清单: {base}')
     if not metadata_only:
-        out('已按默认策略搬运：会话文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
+        out('已按默认策略搬运：任务文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
         if removed:
             out(f'已清理 {len(removed)} 个空项目目录')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
@@ -1527,7 +1527,7 @@ def cmd_move(args, con, db_path):
 # ---------------------------------------------------------------- workspace
 
 def cmd_repair(args, con, db_path):
-    """补齐历史上「只改库没搬文件」的会话：按当前 cwd 把会话文件、记忆、产出归位。"""
+    """补齐历史上「只改库没搬文件」的任务：按当前 cwd 把任务文件、记忆、产出归位。"""
     rows = session_rows(con, include_deleted=False, include_peer=False)
     if getattr(args, 'ids', None):
         want = [x.strip() for x in args.ids.split(',') if x.strip()]
@@ -1541,7 +1541,7 @@ def cmd_repair(args, con, db_path):
         plan.append((r, cur, want_dir))
 
     if not plan:
-        out('没有需要修复的会话：所有项目目录都与当前 cwd 一致')
+        out('没有需要修复的任务：所有项目目录都与当前 cwd 一致')
         return 0
 
     if not args.json:
@@ -1552,9 +1552,9 @@ def cmd_repair(args, con, db_path):
             out(f"      归属 {r['cwd']}")
             out(f"      目录 {os.path.basename(cur) if cur else '(无)'}  ->  {os.path.basename(want_dir)}")
         out('')
-        out('记忆策略：源目录只有这一条会话时合并其项目记忆；共用目录的记忆留在原项目，避免复制污染。')
+        out('记忆策略：源目录只有这一条任务时合并其项目记忆；共用目录的记忆留在原项目，避免复制污染。')
 
-    # 按源目录统计：只有「该目录仅此一条会话」时才算独享，才搬记忆
+    # 按源目录统计：只有「该目录仅此一条任务」时才算独享，才搬记忆
     dir_counts = {}
     for r, cur, _want in plan:
         if cur:
@@ -1633,7 +1633,7 @@ def cmd_workspace(args, con, db_path):
                                'deleted': bool(w['deleted_at'] if 'deleted_at' in w.keys() else 0)}
                               for w in rows], ensure_ascii=False, indent=2))
             return 0
-        out(f"{'名称':<24} {'会话':>4} {'来源':<10} 根路径")
+        out(f"{'名称':<24} {'任务':>4} {'来源':<10} 根路径")
         out('-' * 90)
         for w in rows:
             src = 'local' if (w['workspace_source'] or '').startswith('local') else 'peer'
@@ -1652,7 +1652,7 @@ def cmd_workspace(args, con, db_path):
                 src = 'local' if (w['workspace_source'] or '').startswith('local') else 'peer'
                 out(f"  {w['workspace_id']}  {w['name']}  [{src}]  {primary_root(w)}")
             out('')
-            out('如需把会话归入其中，直接用 move --to <名称或UUID>。')
+            out('如需把任务归入其中，直接用 move --to <名称或UUID>。')
             return 0
         norm = os.path.normpath(path)
         if os.path.exists(norm):
@@ -1758,7 +1758,7 @@ def cmd_workspace(args, con, db_path):
         et_id, _ = infer_et_id(con, ws['workspace_id'], root_new)
         if not args.json:
             out(f"{ws['name']}: {root_old}  ->  {root_new}")
-            out(f'将级联更新 {n_sess} 条会话的 cwd 与执行目标')
+            out(f'将级联更新 {n_sess} 条任务的 cwd 与执行目标')
         if not args.apply_flag:
             if args.json:
                 print(json.dumps({'id': ws['workspace_id'], 'from': root_old, 'to': root_new,
@@ -1796,7 +1796,7 @@ def cmd_workspace(args, con, db_path):
         alive = [s for s in sess if not s['deleted_at']]
         if not args.json:
             out(f"删除工作区: {ws['name']}  ({primary_root(ws)})")
-            out(f'其下会话 {len(sess)} 条，其中未删除 {len(alive)} 条将被一并软删除（进回收站）')
+            out(f'其下任务 {len(sess)} 条，其中未删除 {len(alive)} 条将被一并软删除（进回收站）')
         if not args.yes:
             die('删除类操作需要 --yes 确认（软删除，可在 Qoder 回收站恢复）')
         if not args.apply_flag:
@@ -1820,7 +1820,7 @@ def cmd_workspace(args, con, db_path):
                           (ts, ts, ws['workspace_id']))
         finally:
             w.close()
-        out(f'已软删除工作区及 {len(alive)} 条会话')
+        out(f'已软删除工作区及 {len(alive)} 条任务')
         return 0
 
     die(f'未知的 workspace 子命令: {sub}')
@@ -1917,7 +1917,7 @@ def rollback_items(args, con, db_path):
 
     out(f'待恢复 {len(paths)} 条')
     if not args.yes:
-        die('按清单回滚会覆盖对应会话的当前值，需要 --yes 确认')
+        die('按清单回滚会覆盖对应任务的当前值，需要 --yes 确认')
     if not args.apply_flag:
         out('[DRY-RUN] 未写入')
         return 0
@@ -1956,7 +1956,7 @@ def rollback_items(args, con, db_path):
 def build_parser():
     p = argparse.ArgumentParser(
         prog='qoder_sessions.py',
-        description='Qoder 会话管理：列表 / 重命名 / 迁移工作区 / 管理工作区 / 备份回滚 / 体检')
+        description='Qoder 任务管理：列表 / 重命名 / 迁移工作区 / 管理工作区 / 备份回滚 / 体检')
     p.add_argument('--db', help='Qoder main.sqlite 路径（默认自动探测）')
     p.add_argument('--json', action='store_true', help='输出结构化 JSON')
     p.add_argument('--require-closed', action='store_true',
@@ -1980,9 +1980,9 @@ def build_parser():
 
     dp = sub.add_parser('doctor', parents=[common], help='体检：库/表/进程/路径/影子/备份')
     dp.add_argument('--deep', action='store_true',
-                    help='加查会话文件、目录一致性、项目记忆、产出索引')
+                    help='加查任务文件、目录一致性、项目记忆、产出索引')
 
-    lp = sub.add_parser('list', parents=[common], help='列出会话')
+    lp = sub.add_parser('list', parents=[common], help='列出任务')
     lp.add_argument('--workspace', help='按工作区名/路径/UUID 过滤')
     lp.add_argument('--cwd', help='按工作目录包含匹配')
     lp.add_argument('--keyword', help='按标题关键词')
@@ -1999,7 +1999,7 @@ def build_parser():
     rp.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true',
                     help='真正落盘')
     rp.add_argument('--out', help='导出目录')
-    rp.add_argument('--ids', help='逗号分隔的会话 ID 前缀')
+    rp.add_argument('--ids', help='逗号分隔的任务 ID 前缀')
     rp.add_argument('--filter', help='筛选表达式')
     rp.add_argument('--limit', type=int)
     rp.add_argument('--user-cap', type=int, default=4000, help='单条用户消息保留字符数')
@@ -2011,16 +2011,16 @@ def build_parser():
     rp.add_argument('--require-prefix', action='store_true', dest='require_prefix',
                     help='要求标题带 [短分类] 前缀')
 
-    mp = sub.add_parser('move', parents=[common], help='迁移会话到工作区')
+    mp = sub.add_parser('move', parents=[common], help='迁移任务到工作区')
     mp.add_argument('--to', required=True, help='目标工作区：名称 / 根路径 / UUID')
-    mp.add_argument('--ids', help='逗号分隔的会话 ID 前缀')
+    mp.add_argument('--ids', help='逗号分隔的任务 ID 前缀')
     mp.add_argument('--filter', help='筛选表达式')
     mp.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true',
                     help='真正落盘')
     mp.add_argument('--skip-in-target', action='store_true', default=True,
-                    help='已在目标工作区的会话自动跳过（默认开启）')
+                    help='已在目标工作区的任务自动跳过（默认开启）')
     mp.add_argument('--metadata-only', action='store_true', dest='metadata_only',
-                    help='只改数据库归属，不搬会话文件/记忆/产出')
+                    help='只改数据库归属，不搬任务文件/记忆/产出')
     mp.add_argument('--keep-orphans', action='store_true', dest='keep_orphans',
                     help='保留搬空的源项目目录（默认自动删除）')
     mp.add_argument('--create', action='store_true',
@@ -2054,8 +2054,8 @@ def build_parser():
     bp.add_argument('--list', action='store_true', help='列出备份')
 
     rpp = sub.add_parser('repair', parents=[common],
-                         help='补齐历史只改库未搬文件的会话（按当前 cwd 归位文件/记忆/产出）')
-    rpp.add_argument('--ids', help='逗号分隔的会话 ID 前缀')
+                         help='补齐历史只改库未搬文件的任务（按当前 cwd 归位文件/记忆/产出）')
+    rpp.add_argument('--ids', help='逗号分隔的任务 ID 前缀')
     rpp.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true')
     rpp.add_argument('--memory-mode', choices=['auto', 'always'], default=None,
                      dest='memory_mode',
