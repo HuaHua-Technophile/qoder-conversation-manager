@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.2.1'
+VERSION = '1.2.2'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -443,13 +443,15 @@ def backup_row(con, table, key_col, key_value, base):
     return path
 
 
-def write_batch_manifest(base, items, note=''):
+def write_batch_manifest(base, items, note='', extra=None):
     payload = {
         'version': 1,
         'created_at': datetime.now().isoformat(timespec='seconds'),
         'note': note,
         'items': items,
     }
+    if extra:
+        payload.update(extra)
     path = os.path.join(base, 'batch.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -988,6 +990,8 @@ def rename_apply(args, con, db_path):
     out(f'备份与清单: {base}')
     if not metadata_only:
         out('已按默认策略搬运：会话文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
+        if removed:
+            out(f'已清理 {len(removed)} 个空项目目录')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('标题')
@@ -1046,6 +1050,28 @@ def project_sessions(proj_dir):
     if not proj_dir or not os.path.isdir(proj_dir):
         return 0
     return len([f for f in os.listdir(proj_dir) if f.endswith('.jsonl')])
+
+
+def clean_orphan_dirs(candidates, keep=()):
+    """删除已经没有任何会话的项目目录；keep 里的目标目录永不删。"""
+    removed = []
+    seen = set()
+    keep_norm = {os.path.normcase(k) for k in keep if k}
+    for d in candidates:
+        if not d or not os.path.isdir(d):
+            continue
+        key = os.path.normcase(d)
+        if key in seen or key in keep_norm:
+            continue
+        seen.add(key)
+        if project_sessions(d) > 0:
+            continue
+        try:
+            shutil.rmtree(d)
+            removed.append(d)
+        except Exception:
+            pass
+    return removed
 
 
 def unique_path(p):
@@ -1370,7 +1396,12 @@ def cmd_move(args, con, db_path):
     finally:
         w.close()
 
-    batch = write_batch_manifest(base, results, note=f'move -> {ws["name"]} ({root})')
+    removed = []
+    if not getattr(args, 'keep_orphans', False):
+        removed = clean_orphan_dirs([find_project_dir(x['session_id']) for x in plan],
+                                    keep=[os.path.join(projects_root(), encode_cwd(root))])
+    batch = write_batch_manifest(base, results, note=f'move -> {ws["name"]} ({root})',
+                                 extra={'removed_dirs': removed})
     ok_n = sum(1 for x in results if x['status'] == 'ok')
     bad_n = len(results) - ok_n
     out('')
@@ -1378,6 +1409,8 @@ def cmd_move(args, con, db_path):
     out(f'备份与清单: {base}')
     if not metadata_only:
         out('已按默认策略搬运：会话文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
+        if removed:
+            out(f'已清理 {len(removed)} 个空项目目录')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('迁移')
@@ -1461,10 +1494,19 @@ def cmd_repair(args, con, db_path):
             results.append({'session_id': sid, 'status': 'failed', 'error': str(ex)})
             out(f'[FAIL] {sid[:8]}  {ex}')
 
-    batch = write_batch_manifest(base, results, note='repair')
+    removed = []
+    if not getattr(args, 'keep_orphans', False):
+        removed = clean_orphan_dirs([cur for _r, cur, _w in plan],
+                                    keep=[w for _r, _c, w in plan])
+    batch = write_batch_manifest(base, results, note='repair',
+                                 extra={'removed_dirs': removed})
     ok_n = sum(1 for x in results if x['status'] == 'ok')
     out('')
     out(f'完成：修复 {ok_n}，失败 {len(results) - ok_n}')
+    if removed:
+        out(f'已清理 {len(removed)} 个空项目目录：')
+        for d in removed:
+            out(f'  - {os.path.basename(d)}')
     out(f'备份与清单: {base}')
     if args.json:
         print(json.dumps({'backup': base, 'results': results}, ensure_ascii=False, indent=2))
@@ -1875,6 +1917,8 @@ def build_parser():
                     help='已在目标工作区的会话自动跳过（默认开启）')
     mp.add_argument('--metadata-only', action='store_true', dest='metadata_only',
                     help='只改数据库归属，不搬会话文件/记忆/产出')
+    mp.add_argument('--keep-orphans', action='store_true', dest='keep_orphans',
+                    help='保留搬空的源项目目录（默认自动删除）')
 
     wp = sub.add_parser('workspace', parents=[common], help='工作区管理')
     wsub = wp.add_subparsers(dest='ws_cmd', required=True)
@@ -1907,6 +1951,8 @@ def build_parser():
     rpp.add_argument('--memory-mode', choices=['auto', 'always'], default=None,
                      dest='memory_mode',
                      help='默认按源目录判断；always=总是合并，auto=共用目录不搬')
+    rpp.add_argument('--keep-orphans', action='store_true', dest='keep_orphans',
+                     help='保留搬空的源项目目录（默认自动删除）')
 
     rb = sub.add_parser('rollback', parents=[common], help='从备份恢复（整库 / 单条 / 整批）')
     rb.add_argument('--backup', help='整库快照文件（main.sqlite.bak-*）')

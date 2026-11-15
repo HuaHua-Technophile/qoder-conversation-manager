@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.2.1
+version: 1.2.2
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -154,6 +154,8 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 
 只要元数据时加 `--metadata-only`，此时只改数据库，文件一律不动。
 
+搬空的源项目目录默认自动删除（`--keep-orphans` 可保留），避免 `projects/` 下堆一堆没有会话的空目录。
+
 已在目标工作区的会话自动跳过；`--ids` 里匹配不到的 ID 会告警。每条会话独立事务，文件搬运失败会把已搬的文件放回原位；记忆合并不可逆，回滚时只提示需人工核对。
 
 落盘时**每条会话一个独立事务**：某条失败只标记 `[FAIL]`，其余继续。写完逐条回读三处字段并打 `[OK]` / `[WARN]`，最后输出成功/失败计数与备份组路径。
@@ -175,6 +177,8 @@ python <skill>/scripts/qoder_sessions.py repair --apply         # 落盘
 - `--memory-mode always` 强制总是合并（慎用，会产生重复记忆）。
 
 判断依据是「处理前的目录会话数」，不是逐条实时计算，所以同一目录的多条会话不会因为处理顺序不同而结果不一致。
+
+搬完后源项目目录若已没有任何会话，会被**自动删除**（连带其中的记忆残留）；要保留加 `--keep-orphans`。删除清单写进 `batch.json` 的 `removed_dirs`。
 
 ### workspace
 
