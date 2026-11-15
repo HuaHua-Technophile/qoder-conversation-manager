@@ -147,6 +147,14 @@ WorkBuddy 那次需要手动：拿 `dist/qoder-task-manager-dir-<版本>.zip` �
 
 **仓库不要放网络盘**：技能目录是指向仓库的符号链接。仓库若落在 SMB 共享上（例如 `X:` ＝ `//huahua-book/B/`），笔记本离线时链接会断、技能读不到。仓库固定在本地磁盘（`E:\B\`）就没有这个问题；而工作区（对话空间）照旧放 SMB 互不影响，两者可以分开。
 
+**`--unset` 删不掉含 `%(prefix)` 的配置值**：清理 `safe.directory` 时，`git config --global --unset-all safe.directory '<值>'` 返回**退出码 5**（option does not exist），看着像「没这一项」，其实是值里的 `%(prefix)` 让匹配对不上。`--fixed-value` 必须作为**前置选项**：
+
+```bash
+git config --global --fixed-value --unset-all safe.directory '<值>'
+```
+
+放到 value 位置会报 `wrong number of arguments, should be from 1 to 2`。删之前先确认对应路径真的没用了——`safe.directory` 指向的仓库若仍在 SMB 上，删掉后立刻撞 `dubious ownership`，git 操作全部失效；本地盘仓库则不需要这项配置。
+
 ## 六、改完之后
 
 - 本地运行时不会自动更新，需要去市场点「更新」
