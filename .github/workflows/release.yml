@@ -113,7 +113,29 @@ jobs:
           rm -rf /tmp/pub/qoder-conversation-manager/assets
           echo "打包内容："
           find /tmp/pub/qoder-conversation-manager -type f | sed 's|/tmp/pub/||' | sort
-          skillhub publish /tmp/pub/qoder-conversation-manager \
-            --host https://api.skillhub.cn \
-            --changelog "$CHANGELOG"
+
+          # SkillHub 偶发 524（网关超时）但服务端其实已处理完，重试会报「版本已存在」。
+          # 把这两种情况都当作成功，避免红叉误导。
+          for attempt in 1 2 3; do
+            set +e
+            OUT=$(skillhub publish /tmp/pub/qoder-conversation-manager \
+                    --host https://api.skillhub.cn \
+                    --changelog "$CHANGELOG" 2>&1)
+            CODE=$?
+            set -e
+            echo "$OUT"
+            if [ $CODE -eq 0 ]; then
+              exit 0
+            fi
+            if echo "$OUT" | grep -qE "已存在|already exists"; then
+              echo "::notice::该版本此前已发布成功，视为通过"
+              exit 0
+            fi
+            if [ $attempt -lt 3 ]; then
+              echo "::warning::第 $attempt 次失败，15 秒后重试"
+              sleep 15
+            fi
+          done
+          echo "::error::连续 3 次发布失败，请查看上方日志"
+          exit 1
 
