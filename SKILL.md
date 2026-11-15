@@ -1,8 +1,10 @@
 ---
 name: qoder-conversation-manager
 description: 管理本机 Qoder 的会话与工作区：列出与筛选会话、按完整对话历史重命名、把会话迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。当用户说「重命名 Qoder 会话、给对话改标题、整理会话名称、移动对话、换工作区、改归属、把对话放到某个工作区、新建空间/工作区、改工作区路径、删除工作区、列出 Qoder 会话、Qoder 体检」时使用。只操作 Qoder 本地数据（Windows），不操作 WorkBuddy 数据。
-display_name: Qoder 会话管理
-display_name_zh: Qoder 会话管理
+description_zh: 管理 Qoder 本地会话与工作区：按完整对话历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。默认干跑，写入前自动备份，拒绝影子会话。
+description_en: Manage local Qoder sessions and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
+display_name: Qoder会话管理
+display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
 version: 1.0.0
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
