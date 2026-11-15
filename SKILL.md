@@ -6,7 +6,16 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.3.2
+examples_zh:
+  - "把标题太短的 Qoder 会话批量重命名"
+  - "把 NAS 相关的对话都归到 NAS 工作区，附件和产出一起带过去"
+  - "给 Qoder 做一次体检，看工作区路径和备份有没有异常"
+examples_en:
+  - "Batch rename Qoder sessions whose titles are too short"
+  - "Move all NAS-related conversations into the NAS workspace, files included"
+  - "Run a health check on Qoder and report workspace or backup problems"
+author: HuaHua
+version: 1.3.3
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---

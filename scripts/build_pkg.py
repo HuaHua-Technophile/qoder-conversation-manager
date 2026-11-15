@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = 'qoder-conversation-manager'
-VERSION = '1.3.2'
+VERSION = '1.3.3'
 
 FILES = ['SKILL.md', 'README.md', 'CHANGELOG.md', 'LICENSE', 'PUBLISHING.md']
 DIRS = ['scripts', 'references', 'examples']
