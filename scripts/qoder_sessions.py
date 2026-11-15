@@ -1119,7 +1119,7 @@ def build_parser():
     lp.add_argument('--workspace', help='按工作区名/路径/UUID 过滤')
     lp.add_argument('--cwd', help='按工作目录包含匹配')
     lp.add_argument('--keyword', help='按标题关键词')
-    lp.add_argument('--filter', help='表达式，如 "cwd like %NAS% and title contains 工具包"')
+    lp.add_argument('--filter', help='表达式，如 "cwd like %%NAS%% and title contains 工具包"')
     lp.add_argument('--since', help='YYYY-MM-DD 之后更新过')
     lp.add_argument('--include-deleted', action='store_true')
     lp.add_argument('--include-peer', action='store_true')
