@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.4.2'
+VERSION = '1.4.3'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -223,7 +223,10 @@ def session_rows(con, include_deleted=False, include_peer=True):
     return out_rows
 
 
-def is_peer_type(row, d):
+def is_peer_type(row, d=None):
+    """影子任务判断。可传 (row, dict)，也可只传一个含字段的 dict。"""
+    if d is None:
+        d = row if isinstance(row, dict) else {}
     try:
         e = json.loads(d.get('extra_json') or '{}')
     except Exception:
@@ -1753,16 +1756,20 @@ def cmd_workspace(args, con, db_path):
             die('workspace retarget 需要 --path')
         root_old = primary_root(ws)
         root_new = os.path.normpath(args.path)
+        n_all = con.execute('select count(*) from chat_sessions where workspace_id=?',
+                            (ws['workspace_id'],)).fetchone()[0]
         n_sess = con.execute('select count(*) from chat_sessions where workspace_id=? and deleted_at is null',
                              (ws['workspace_id'],)).fetchone()[0]
         et_id, _ = infer_et_id(con, ws['workspace_id'], root_new)
         if not args.json:
             out(f"{ws['name']}: {root_old}  ->  {root_new}")
-            out(f'将级联更新 {n_sess} 条任务的 cwd 与执行目标')
+            extra = f'（含已删除 {n_all - n_sess} 条）' if n_all > n_sess else ''
+            out(f'将级联更新 {n_all} 条任务的 cwd 与执行目标{extra}')
         if not args.apply_flag:
             if args.json:
                 print(json.dumps({'id': ws['workspace_id'], 'from': root_old, 'to': root_new,
-                                  'sessions': n_sess, 'applied': False}, ensure_ascii=False, indent=2))
+                                  'sessions': n_sess, 'sessions_all': n_all, 'applied': False},
+                                 ensure_ascii=False, indent=2))
             else:
                 out('[DRY-RUN] 未写入')
             return 0
@@ -1771,23 +1778,25 @@ def cmd_workspace(args, con, db_path):
         out(f'已备份: {os.path.basename(bk)}')
         et = {'mode': 'local', 'host': {'id': 'local', 'kind': 'local', 'label': 'Local'},
               'workspace': {'id': et_id, 'path': root_new}}
+        skipped = 0
         w = connect(db_path, write=True)
         try:
             with w:
                 w.execute('update workspaces set root_paths_json=?, updated_at=? where workspace_id=?',
                           (json.dumps([root_new], ensure_ascii=False), now_ms(), ws['workspace_id']))
-                for r in w.execute('select session_id, extra_json from chat_sessions where workspace_id=?',
+                for r in w.execute('select session_id, extra_json, execution_target_json '
+                                   'from chat_sessions where workspace_id=?',
                                    (ws['workspace_id'],)).fetchall():
-                    e = load_json(r[1])
-                    if is_peer_type({'extra_json': json.dumps(e, ensure_ascii=False),
-                                     'execution_target_json': ''}):
+                    if is_peer_type(None, {'extra_json': r['extra_json'],
+                                           'execution_target_json': r['execution_target_json'] or ''}):
+                        skipped += 1
                         continue
                     w.execute('update chat_sessions set cwd=?, execution_target_json=? where session_id=?',
                               (root_new, json.dumps(et, ensure_ascii=False, separators=(',', ':')),
-                               r[0]))
+                               r['session_id']))
         finally:
             w.close()
-        out('已改路径并级联更新')
+        out('已改路径并级联更新' + (f'（跳过影子任务 {skipped} 条）' if skipped else ''))
         return 0
 
     if sub == 'delete':

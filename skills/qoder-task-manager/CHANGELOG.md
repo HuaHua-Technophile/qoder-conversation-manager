@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.4.3 — 2026-11-15
+
+修复 `workspace retarget --apply` 必定崩溃，并纠正影子任务判断。
+
+- **崩溃**：retarget 分支调用 `is_peer_type()` 只传 1 个参数，而函数签名要 2 个，直接抛 `TypeError: is_peer_type() missing 1 required positional argument: 'd'`。异常在 `with` 事务内抛出，`workspaces` 那条更新一并回滚——表现为「跑完没报成功、库也没变」，路径改不动。
+- **影子任务漏判**：原代码给 `execution_target_json` 传的是空串，`mode == "peer"` 的影子任务永远识别不出来，会被一起改掉 `cwd`，随后被同步覆盖。现在按行读出真实值判断，输出里报「跳过影子任务 N 条」。
+- `is_peer_type()` 的第二个参数改为可选，只传一个字段 dict 也能用，避免同类调用再踩同一个坑。
+- 任务计数改为按实际处理行数统计（含已删除任务），已删除的额外注明，不再和循环范围对不上。
+
 ## 1.4.2 — 2026-11-15
 
 用打过补丁的 CLI 重发，让分类与图标真正落到条目上。
