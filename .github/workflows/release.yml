@@ -106,7 +106,14 @@ jobs:
           CHANGELOG: ${{ github.event.release.name }}
         run: |
           if [ -z "$CHANGELOG" ]; then CHANGELOG="发布 $(git describe --tags --always)"; fi
-          skillhub publish skills/qoder-conversation-manager \
+          # assets/ 只是仓库与 README 的展示图，不属于技能内容；
+          # SkillHub 不接受 png 等二进制文件，直接打包会被拒。
+          rm -rf /tmp/pub && mkdir -p /tmp/pub
+          cp -r skills/qoder-conversation-manager /tmp/pub/
+          rm -rf /tmp/pub/qoder-conversation-manager/assets
+          echo "打包内容："
+          find /tmp/pub/qoder-conversation-manager -type f | sed 's|/tmp/pub/||' | sort
+          skillhub publish /tmp/pub/qoder-conversation-manager \
             --host https://api.skillhub.cn \
             --changelog "$CHANGELOG"
 
