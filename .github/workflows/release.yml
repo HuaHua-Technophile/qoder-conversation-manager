@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.3.6)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check tag matches VERSION
+        run: |
+          PKG_VERSION=$(python -c "import re,pathlib;print(re.search(r\"VERSION = '([^']+)'\", pathlib.Path('skills/qoder-conversation-manager/scripts/build_pkg.py').read_text()).group(1))")
+          SKILL_VERSION=$(python -c "import re,pathlib;print(re.search(r'^version:\s*(\S+)', pathlib.Path('skills/qoder-conversation-manager/SKILL.md').read_text(), re.M).group(1))")
+          TAG_VERSION="${{ steps.ref.outputs.version }}"
+          echo "tag=$TAG_VERSION build_pkg=$PKG_VERSION SKILL.md=$SKILL_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ] || [ "$TAG_VERSION" != "$SKILL_VERSION" ]; then
+            echo "::error::版本号不一致：先在 SKILL.md 与 build_pkg.py 里同步到 $TAG_VERSION 再打 tag"
+            exit 1
+          fi
+
+      - name: Doctor (sanity check script imports)
+        run: python skills/qoder-conversation-manager/scripts/qoder_sessions.py --version
+
+      - name: Build packages
+        run: python skills/qoder-conversation-manager/scripts/build_pkg.py
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ref.outputs.tag }}
+          files: dist/*.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
