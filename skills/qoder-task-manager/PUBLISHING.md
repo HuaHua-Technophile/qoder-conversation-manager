@@ -6,11 +6,11 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 v1.3.6 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release |
-| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.6<br>⏳ v1.3.7 审核中 | 已全自动，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
-| skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已改用 `skills/<name>/` 布局，等它下次扫描 |
-| WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 1.3.5 | 能力 ID `os_f2f623a10e63b114`，公开。**今日提审额度已满 5/5**（当月 5/20），次日恢复后可传 `-dir` 包 |
-| Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
+| GitHub | ✅ 已发布 v1.6.0 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release（run 43732129885，44s，两个 zip） |
+| SkillHub（skillhub.cn） | ✅ 已提交 v1.6.0<br>⏳ 列表页仍显示 v1.4.4 | CI 自动发布成功（日志 `✓ Published: skillId=322075`）；平台列表页按「已过审版本」展示，需等审核刷新。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager) |
+| skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已是 `skills/<name>/` 布局，等它下次扫描 |
+| WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 v1.6.0 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**；当日提审额度 5/5 已满（当月 5/20），次日恢复 |
+| Qoder 技能市场 | ⏳ 待提交 | 公开市场走拓展发布；**客户端本地已装 1.6.0**（`~/.qoder/skills/qoder-task-manager`） |
 | skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
 
 ## 提交材料
