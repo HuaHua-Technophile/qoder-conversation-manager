@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+Thumbs.db
+.venv/
+venv/
+*.sqlite
+*.sqlite.bak-*
+qoder-rename-export/
+exp/
+titles*.json
+!titles.example.json
