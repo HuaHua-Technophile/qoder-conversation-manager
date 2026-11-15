@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="skills/qoder-conversation-manager/assets/icon-qoder-512.png"
+       width="128" height="128" alt="Qoder Conversation Manager">
+</p>
+
 # Qoder Conversation Manager
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
