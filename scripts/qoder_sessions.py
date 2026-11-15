@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.2.3'
+VERSION = '1.3.0'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -1156,8 +1156,57 @@ def merge_memory(src_dir, dst_dir):
     return rep
 
 
-def session_outputs(con, sid):
-    """从 turn_file_change_* 反查该会话改过的文件（相对 root）。"""
+def path_under(p, root):
+    if not p or not root:
+        return False
+    try:
+        pn = os.path.normcase(os.path.abspath(p))
+        rn = os.path.normcase(os.path.abspath(root))
+    except Exception:
+        return False
+    return pn == rn or pn.startswith(rn + os.sep)
+
+
+WRITE_TOOLS = ('Write', 'Edit', 'MultiEdit', 'NotebookEdit')
+
+
+def tool_output_paths(jsonl_path, root):
+    """从会话正文里抽 Write/Edit 类工具写过的、位于 root 下的绝对路径。"""
+    out = set()
+    if not jsonl_path or not os.path.isfile(jsonl_path):
+        return out
+    try:
+        fh = open(jsonl_path, encoding='utf-8', errors='ignore')
+    except Exception:
+        return out
+    with fh:
+        for line in fh:
+            if 'tool_use' not in line:
+                continue
+            try:
+                o = json.loads(line)
+            except Exception:
+                continue
+            msg = o.get('message') or {}
+            cont = msg.get('content')
+            if not isinstance(cont, list):
+                continue
+            for c in cont:
+                if not isinstance(c, dict) or c.get('type') != 'tool_use':
+                    continue
+                if c.get('name') not in WRITE_TOOLS:
+                    continue
+                inp = c.get('input') or {}
+                for k in ('file_path', 'notebook_path', 'path'):
+                    v = inp.get(k)
+                    if isinstance(v, str) and v and path_under(v, root):
+                        out.add(os.path.abspath(v))
+    return out
+
+
+def session_outputs(con, sid, extra=None):
+    """该会话涉及的文件（绝对源路径）。DB 索引 + 调用方给的正文路径两路合并。"""
+    found = {}
     try:
         rows = con.execute(
             'select f.path as path, f.operation as op, s.roots_json as roots '
@@ -1165,8 +1214,7 @@ def session_outputs(con, sid):
             'join turn_file_change_sets s on f.change_set_id = s.change_set_id '
             'where s.session_id = ?', (sid,)).fetchall()
     except sqlite3.Error:
-        return []
-    out = []
+        rows = []
     for r in rows:
         roots = load_json(r['roots'], [])
         root = ''
@@ -1177,8 +1225,16 @@ def session_outputs(con, sid):
                     break
             if not root and roots and isinstance(roots[0], dict):
                 root = roots[0].get('path') or ''
-        out.append({'root': root, 'rel': r['path'] or '', 'op': r['op']})
-    return out
+        rel = (r['path'] or '').replace('/', os.sep)
+        if not root or not rel:
+            continue
+        found[os.path.normcase(os.path.join(root, rel))] = os.path.join(root, rel)
+
+    for p in (extra or ()):
+        if p:
+            found.setdefault(os.path.normcase(p), p)
+
+    return list(found.values())
 
 
 def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=False,
@@ -1193,6 +1249,9 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
     old_proj = find_project_dir(sid)
     new_proj = os.path.join(projects_root(), encode_cwd(new_root))
     os.makedirs(new_proj, exist_ok=True)
+    # 正文里的工具路径必须在搬走 jsonl 之前抽出来
+    proto_jsonl = os.path.join(old_proj, f'{sid}.jsonl') if old_proj else None
+    extra_paths = tool_output_paths(proto_jsonl, old_cwd) if proto_jsonl else set()
 
     if old_proj and os.path.normcase(old_proj) != os.path.normcase(new_proj):
         recs.append(move_entry(os.path.join(old_proj, f'{sid}.jsonl'),
@@ -1220,17 +1279,14 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
                              'status': 'skipped-shared',
                              'reason': f'旧项目仍有 {project_sessions(old_proj) - 1} 条其他会话'})
 
-    seen = set()
-    for item in session_outputs(con, sid):
-        root_old, rel = item['root'], item['rel']
-        if not root_old or not rel:
+    for src in session_outputs(con, sid, extra_paths):
+        try:
+            rel = os.path.relpath(src, old_cwd)
+        except Exception:
             continue
-        key = (os.path.normcase(root_old), rel.lower())
-        if key in seen:
+        if rel.startswith('..'):
             continue
-        seen.add(key)
-        src = os.path.join(root_old, rel.replace('/', os.sep))
-        dst = os.path.join(new_root, rel.replace('/', os.sep))
+        dst = os.path.join(new_root, rel)
         if os.path.normcase(src) == os.path.normcase(dst):
             continue
         rec = move_entry(src, dst, base, sid, 'output', 'output')

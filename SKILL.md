@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.2.3
+version: 1.3.0
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -152,9 +152,19 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 1. 数据库：`workspace_id`、`cwd`、`execution_target_json.workspace.{id,path}` 一起改；
 2. 会话文件：`projects/<旧cwd编码>/<sid>.jsonl` 与 `<sid>/` 子目录 → `projects/<新cwd编码>/`；
 3. 项目记忆：旧项目的 `memory/` → 目标项目，`MEMORY.md` 逐行去重追加，同名不同内容另存为带时间戳文件；
-4. 产出：`turn_file_change_files` 记过的文件按相对路径搬到新工作区根，**旧路径留硬链接**（跨盘失败则复制），历史里的旧链接仍能打开。
+4. 产出：两路合并后按相对路径搬到新工作区根，**旧路径留硬链接**（跨盘失败则复制），历史里的旧链接仍能打开：
+   - `turn_file_change_files` 的索引记录（覆盖不全，只记进过评审的 turn）；
+   - **会话正文里 `Write` / `Edit` / `MultiEdit` / `NotebookEdit` 调用过的 `file_path`**，覆盖面明显更广。
 
-只要元数据时加 `--metadata-only`，此时只改数据库，文件一律不动。
+只搬**落在该会话 `cwd` 之下**的文件。指向其他目录的路径（比如改过 `~/.qoder/skills` 里的文件）属于外部引用，不会被搬进工作区。
+
+只要元数据时加 `--metadata-only`，此时只改数据库，文件一律不动——这是**显式开关**，默认就是全量搬运。
+
+两种入口都走同一套逻辑：
+
+- 空间 A → 空间 B：库里改归属，文件从旧项目目录搬到新项目目录，产出搬到 B 的根；
+- 无空间 → 空间 A：`workspace_id` 为空的会话同样按 `cwd` 归位，产出照搬；
+- 空间 A → 移出（变回无工作区）：暂不支持，`move` 必须给 `--to`。
 
 搬空的源项目目录默认自动删除（`--keep-orphans` 可保留），避免 `projects/` 下堆一堆没有会话的空目录。
 
