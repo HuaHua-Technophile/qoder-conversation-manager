@@ -179,3 +179,43 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 | `--manifest <items/xxx.json>` | 只恢复一条会话 |
 | `--batch <batch.json>` | 恢复该批全部条目 |
 | `--backup ./qoder-cm-backups/db/<快照>` | 整库覆盖（先另存 pre-rollback） |
+
+
+## 项目目录、记忆与产出（v1.2.0）
+
+```
+~/.qoder/
+├── projects/
+│   └── <cwd 编码>/
+│       ├── <sid>.jsonl        # 会话正文
+│       ├── <sid>/             # 附件、子代理、工具结果
+│       └── memory/            # 项目级记忆
+│           ├── MEMORY.md
+│           └── project-*.md / feedback-*.md / reference-*.md
+├── memory/                    # 全局记忆（跨项目偏好），迁移时不动
+└── memories/db/memory.db      # 结构化长期记忆（chat_session.memory_refs）
+```
+
+**cwd 编码**：把 cwd 里的非 `[A-Za-z0-9._-]` 字符替换成 `-`。
+例：`D:\HuaHua\Documents\Qoder\2026-11-15\11679d46` → `D--HuaHua-Documents-Qoder-2026-11-15-11679d46`。
+
+**关键事实**：目录名在会话创建时生成，**改 `cwd` 不会自动更新**。应用按 sid 扫描 `projects/*`，所以不搬文件也不会丢历史；但项目记忆挂在旧编码目录下，迁走后新项目读不到。
+
+**产出索引**：
+
+```sql
+SELECT f.path, f.operation, s.roots_json
+  FROM turn_file_change_files f
+  JOIN turn_file_change_sets s ON f.change_set_id = s.change_set_id
+ WHERE s.session_id = ?;
+```
+
+`roots_json` 形如 `[{"id":"primary","path":"E:\\B\\NAS","kind":"primary"}]`，`path` 相对该根。覆盖率不高（仅记录进过评审/检查点的 turn），所以产出迁移是「尽力而为」：没索引到的文件不会搬，报告里也不列。
+
+**迁移策略**：
+
+| 对象 | 处理 | 失败时 |
+|---|---|---|
+| 会话 jsonl / 子目录 | 移动到新编码目录 | 该条标记失败，已搬部分回滚 |
+| 项目记忆 | 合并（MEMORY.md 去重追加） | 冲突另存带时间戳文件 |
+| 产出 | 移动 + 旧路径硬链接 | 跨盘退回复制；再失败只记 `link:false` |

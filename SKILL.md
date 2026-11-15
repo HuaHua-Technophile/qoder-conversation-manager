@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.1.2
+version: 1.2.0
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -24,7 +24,7 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 | `list` | 列出会话，支持六维筛选 | 否 |
 | `rename --export` | 导出完整对话历史，供 agent 生成标题 | 否 |
 | `rename --import` | 把 titles.json 写回，并锁定标题来源 | 是 |
-| `move` | 把会话迁到指定工作区（改归属、cwd、执行目标） | 是 |
+| `move` | 迁移会话：改归属 + 搬会话文件、项目记忆、产出（`--metadata-only` 只改库） | 是 |
 | `workspace` | list / new / rename / retarget / archive / unarchive / delete | 部分 |
 | `backup` / `rollback` | 整库快照与恢复 | 是 |
 
@@ -37,6 +37,10 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 - 标题来源：`extra_json.titleSource` + `titleResolved`。Qoder 原生只用「首条用户消息 + 首条助手回复」起名，留下的 `provisional` / `fallback` 标题会很难看。写入时本技能统一置 `custom` + `resolved=true` + `titleRevision+1`，防止被重新生成覆盖。
 - 执行目标：`execution_target_json.workspace` 需同时改 `id` 与 `path`。本地工作区的 `id` 是 `ws_<64位哈希>`，**无法由路径复现**；技能会优先复用目标工作区已有会话的值，新工作区才退回工作区 UUID。
 - 影子会话：`extra_json.peerOriginSessionId` 非空，或 `execution_target_json.mode == "peer"` 的会话，正文在另一台设备，本机只有元数据。**一律拒绝改名与迁移**（改了也会被同步覆盖）。
+- 项目目录：`~/.qoder/projects/<cwd 编码>/`，内含 `<sid>.jsonl`、同名子目录（附件/子代理）与 `memory/`。编码规则是把 cwd 里的非字母数字换成 `-`，且**按创建时的 cwd 生成、不随改库更新**。
+- 记忆分两层：`projects/<cwd 编码>/memory/` 是**项目级**（MEMORY.md + `project-*` / `feedback-*` / `reference-*`）；`~/.qoder/memory/` 是**全局**（跨项目偏好），迁移时不动全局。
+- 产出：`turn_file_change_files` join `turn_file_change_sets`（按 `session_id`），`path` 是相对 `roots_json[primary].path` 的路径。
+- 会话查找按 sid 扫描 `projects/*`，所以只改库不会丢历史；但**项目记忆挂在 cwd 编码下**，不搬就会读不到。
 - 工作区来源：`workspaces.workspace_source` 为 `local` 或以 `peer:` 开头。只有 `local` 能作为操作对象与迁移目标。
 - 同一台机器上可能存在**同名工作区**（本地一份 + 对端投影若干）。技能解析名称时优先取唯一的本地工作区。
 
@@ -140,7 +144,16 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 工具包" --apply
 ```
 
-`--to` 接受工作区名称、根路径或 UUID。迁移会同时改 `workspace_id`、`cwd`、`execution_target_json.workspace.{id,path}` 三处，保持一致。已在目标工作区的会话自动跳过；`--ids` 里匹配不到的 ID 会告警。
+`--to` 接受工作区名称、根路径或 UUID。**默认是全量迁移**，一条会话会同时处理四件事：
+
+1. 数据库：`workspace_id`、`cwd`、`execution_target_json.workspace.{id,path}` 一起改；
+2. 会话文件：`projects/<旧cwd编码>/<sid>.jsonl` 与 `<sid>/` 子目录 → `projects/<新cwd编码>/`；
+3. 项目记忆：旧项目的 `memory/` → 目标项目，`MEMORY.md` 逐行去重追加，同名不同内容另存为带时间戳文件；
+4. 产出：`turn_file_change_files` 记过的文件按相对路径搬到新工作区根，**旧路径留硬链接**（跨盘失败则复制），历史里的旧链接仍能打开。
+
+只要元数据时加 `--metadata-only`，此时只改数据库，文件一律不动。
+
+已在目标工作区的会话自动跳过；`--ids` 里匹配不到的 ID 会告警。每条会话独立事务，文件搬运失败会把已搬的文件放回原位；记忆合并不可逆，回滚时只提示需人工核对。
 
 落盘时**每条会话一个独立事务**：某条失败只标记 `[FAIL]`，其余继续。写完逐条回读三处字段并打 `[OK]` / `[WARN]`，最后输出成功/失败计数与备份组路径。
 
@@ -218,6 +231,8 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 5. **破坏性操作仍做整库快照**（`./qoder-cm-backups/db/`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
 6. **影子会话一律拒绝**改名与迁移，并在输出里说明原因。这是 Qoder 特有的数据形态——`peerOriginSessionId` 非空的会话正文在另一台设备，本机只有元数据，改了会被同步覆盖。
 7. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
+8. **搬文件前先备份**：会话文件、子目录、记忆、产出在移动前都会复制到备份组的 `files/<sid>/` 下。
+9. **产出旧路径留链接**：优先硬链接，跨盘失败退回复制；两者都失败时只在清单里记 `link:false`，不中断迁移。
 8. **删除只做软删除**（进回收站），且必须 `--yes`。
 9. **只改元数据**，不碰 `chat_session_messages` 正文与搜索索引。
 10. **副本演练**：给 `--db` 指向副本时，与真库互不影响，可放心跑全套写操作。
@@ -231,6 +246,9 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 | 写完标题没变 | 应用还在用旧缓存 | 重启 Qoder；仍不变则查 `titleSource` 是否为 `custom` |
 | `目标工作区名不唯一` | 存在同名本地/对端工作区 | 用 `workspace list` 查 UUID，`--to <UUID>` |
 | 迁完侧栏没变 | 应用未重启 | 重启 Qoder |
+| 迁移后新项目读不到旧记忆 | 只用了 `--metadata-only`，记忆没搬 | 去掉该参数重跑，或手工合并 `projects/*/memory/` |
+| 产出旧路径打不开 | 硬链接与复制都失败（如跨盘且无权限） | 看清单里的 `link` 字段，手工补链接或复制 |
+| `--qoder-home` 指错 | 沙箱演练时未指向副本 | 确认指向含 `projects/` 的根目录 |
 | 改完标题又变回去 | 只改了 `title`，没锁 `titleSource` | 用本技能 `rename --import`（会自动锁定） |
 | `未找到 Qoder 数据库` | 非默认安装位置 | `--db` 指定 `main.sqlite` |
 | 迁移后执行目录不对 | `execution_target_json` 未同步 | 本技能会三处同改；手工改库容易漏 |

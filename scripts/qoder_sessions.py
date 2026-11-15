@@ -7,6 +7,7 @@
 """
 import argparse
 import glob
+import filecmp
 import json
 import os
 import re
@@ -18,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.1.2'
+VERSION = '1.2.0'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -950,6 +951,8 @@ def rename_apply(args, con, db_path):
     out('')
     out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
     out(f'备份与清单: {base}')
+    if not metadata_only:
+        out('已按默认策略搬运：会话文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('标题')
@@ -971,6 +974,227 @@ def infer_et_id(con, target_ws_id, target_root):
     if ids:
         return max(ids.items(), key=lambda x: x[1])[0], True
     return target_ws_id, False
+
+
+# ------------------------------------------------ Qoder 项目目录与文件迁移
+
+QODER_HOME_OVERRIDE = None
+
+
+def qoder_home():
+    if QODER_HOME_OVERRIDE:
+        return QODER_HOME_OVERRIDE
+    return os.path.join(os.path.expanduser('~'), '.qoder')
+
+
+def projects_root():
+    return os.path.join(qoder_home(), 'projects')
+
+
+def encode_cwd(cwd):
+    """Qoder 的 project 目录名：cwd 里的非字母数字一律换成 -。"""
+    return re.sub(r'[^A-Za-z0-9._-]', '-', cwd or '')
+
+
+def find_project_dir(sid):
+    root = projects_root()
+    if not os.path.isdir(root):
+        return None
+    for name in os.listdir(root):
+        d = os.path.join(root, name)
+        if os.path.isfile(os.path.join(d, f'{sid}.jsonl')) or os.path.isdir(os.path.join(d, sid)):
+            return d
+    return None
+
+
+def unique_path(p):
+    if not os.path.exists(p):
+        return p
+    stem, ext = os.path.splitext(p)
+    return f'{stem}-{time.strftime("%Y%m%d-%H%M%S")}{ext}'
+
+
+def backup_path(src, base, sid, bucket):
+    dst_dir = os.path.join(base, 'files', sid[:8], bucket)
+    os.makedirs(dst_dir, exist_ok=True)
+    dst = os.path.join(dst_dir, os.path.basename(src.rstrip('\\/')))
+    if os.path.isdir(src):
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    else:
+        shutil.copy2(src, dst)
+    return dst
+
+
+def move_entry(src, dst, base, sid, bucket, kind):
+    """搬一个文件或目录，返回记录（含备份路径）。"""
+    rec = {'kind': kind, 'src': src, 'dst': dst, 'status': 'pending'}
+    if not os.path.exists(src):
+        rec['status'] = 'missing'
+        return rec
+    try:
+        rec['backup'] = backup_path(src, base, sid, bucket)
+    except Exception as ex:
+        rec['backup_error'] = str(ex)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    dst2 = unique_path(dst)
+    rec['dst'] = dst2
+    if os.path.isdir(src):
+        shutil.copytree(src, dst2, dirs_exist_ok=True)
+        shutil.rmtree(src)
+    else:
+        shutil.move(src, dst2)
+    rec['status'] = 'moved'
+    return rec
+
+
+def merge_memory(src_dir, dst_dir):
+    """总是合并：MEMORY.md 逐行去重追加；同名不同内容另存为带时间戳文件。"""
+    rep = {'copied': [], 'merged': [], 'skipped': []}
+    if not os.path.isdir(src_dir):
+        return rep
+    os.makedirs(dst_dir, exist_ok=True)
+    for name in sorted(os.listdir(src_dir)):
+        src = os.path.join(src_dir, name)
+        if not os.path.isfile(src):
+            continue
+        dst = os.path.join(dst_dir, name)
+        if not os.path.exists(dst):
+            shutil.copy2(src, dst)
+            rep['copied'].append(name)
+            continue
+        if name.lower() == 'memory.md':
+            try:
+                old_lines = open(src, encoding='utf-8', errors='ignore').read().splitlines()
+                cur = open(dst, encoding='utf-8', errors='ignore').read()
+                have = {l.strip() for l in cur.splitlines()}
+                add = [l for l in old_lines if l.strip() and l.strip() not in have]
+                if add:
+                    with open(dst, 'a', encoding='utf-8') as f:
+                        f.write(chr(10) + chr(10).join(add) + chr(10))
+                    rep['merged'].append(f'{name}(+{len(add)})')
+                else:
+                    rep['skipped'].append(name)
+            except Exception:
+                rep['skipped'].append(name)
+            continue
+        try:
+            if filecmp.cmp(src, dst, shallow=False):
+                rep['skipped'].append(name)
+                continue
+        except Exception:
+            pass
+        alt = unique_path(dst)
+        shutil.copy2(src, alt)
+        rep['merged'].append(os.path.basename(alt))
+    return rep
+
+
+def session_outputs(con, sid):
+    """从 turn_file_change_* 反查该会话改过的文件（相对 root）。"""
+    try:
+        rows = con.execute(
+            'select f.path as path, f.operation as op, s.roots_json as roots '
+            'from turn_file_change_files f '
+            'join turn_file_change_sets s on f.change_set_id = s.change_set_id '
+            'where s.session_id = ?', (sid,)).fetchall()
+    except sqlite3.Error:
+        return []
+    out = []
+    for r in rows:
+        roots = load_json(r['roots'], [])
+        root = ''
+        if isinstance(roots, list):
+            for x in roots:
+                if isinstance(x, dict) and x.get('id') == 'primary':
+                    root = x.get('path') or ''
+                    break
+            if not root and roots and isinstance(roots[0], dict):
+                root = roots[0].get('path') or ''
+        out.append({'root': root, 'rel': r['path'] or '', 'op': r['op']})
+    return out
+
+
+def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=False):
+    """搬会话文件、项目记忆与产出；返回记录列表。"""
+    recs = []
+    if metadata_only:
+        return recs
+    old_proj = find_project_dir(sid)
+    new_proj = os.path.join(projects_root(), encode_cwd(new_root))
+    os.makedirs(new_proj, exist_ok=True)
+
+    if old_proj and os.path.normcase(old_proj) != os.path.normcase(new_proj):
+        recs.append(move_entry(os.path.join(old_proj, f'{sid}.jsonl'),
+                               os.path.join(new_proj, f'{sid}.jsonl'),
+                               base, sid, 'session', 'jsonl'))
+        recs.append(move_entry(os.path.join(old_proj, sid),
+                               os.path.join(new_proj, sid),
+                               base, sid, 'session', 'sidecar'))
+        mem_old = os.path.join(old_proj, 'memory')
+        if os.path.isdir(mem_old):
+            try:
+                backup_path(mem_old, base, sid, 'memory')
+            except Exception:
+                pass
+            rep = merge_memory(mem_old, os.path.join(new_proj, 'memory'))
+            recs.append({'kind': 'memory', 'src': mem_old,
+                         'dst': os.path.join(new_proj, 'memory'),
+                         'status': 'merged', 'report': rep})
+
+    seen = set()
+    for item in session_outputs(con, sid):
+        root_old, rel = item['root'], item['rel']
+        if not root_old or not rel:
+            continue
+        key = (os.path.normcase(root_old), rel.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        src = os.path.join(root_old, rel.replace('/', os.sep))
+        dst = os.path.join(new_root, rel.replace('/', os.sep))
+        rec = move_entry(src, dst, base, sid, 'output', 'output')
+        if rec['status'] == 'moved':          # 旧路径留链接，历史引用仍可用
+            try:
+                os.link(rec['dst'], rec['src'])
+                rec['link'] = True
+            except Exception:
+                try:
+                    shutil.copy2(rec['dst'], rec['src'])
+                    rec['link'] = 'copy'
+                except Exception:
+                    rec['link'] = False
+        recs.append(rec)
+    return recs
+
+
+def undo_files(recs):
+    """把已搬走的文件放回原位；记忆合并不可逆，只报告。"""
+    notes = []
+    for r in reversed(recs or []):
+        kind = r.get('kind')
+        if kind == 'memory':
+            notes.append('memory:merged(需手工核对)')
+            continue
+        if r.get('status') != 'moved':
+            continue
+        src, dst = r.get('src'), r.get('dst')
+        try:
+            if r.get('link') in (True, 'copy') and os.path.exists(src):
+                if r.get('link') is True:
+                    os.unlink(src)
+                else:
+                    os.remove(src)
+            if os.path.exists(dst):
+                os.makedirs(os.path.dirname(src), exist_ok=True)
+                if os.path.isdir(dst):
+                    shutil.copytree(dst, src, dirs_exist_ok=True)
+                    shutil.rmtree(dst)
+                else:
+                    shutil.move(dst, src if not os.path.exists(src) else unique_path(src))
+                notes.append('restored')
+        except Exception as ex:
+            notes.append(f'fail:{ex}')
+    return notes
 
 
 def cmd_move(args, con, db_path):
@@ -1034,11 +1258,7 @@ def cmd_move(args, con, db_path):
 
     # 按对象备份：每条会话存一份完整行，可单条回滚
     base = new_backup_set(db_path, 'move')
-    manifests = {}
-    for r in plan:
-        mp = backup_row(con, 'chat_sessions', 'session_id', r['session_id'], base)
-        if mp:
-            manifests[r['session_id']] = os.path.basename(mp)
+    metadata_only = getattr(args, 'metadata_only', False)
 
     et = {'mode': 'local',
           'host': {'id': 'local', 'kind': 'local', 'label': 'Local'},
@@ -1050,7 +1270,20 @@ def cmd_move(args, con, db_path):
     try:
         for r in plan:
             sid = r['session_id']
+            files = []
             try:
+                # 先搬文件（会话正文/子目录/项目记忆/产出），再改库
+                files = move_files_for_session(con, sid, r['cwd'], root, base, metadata_only)
+                row = con.execute('select * from chat_sessions where session_id=?', (sid,)).fetchone()
+                payload = {'version': 1, 'table': 'chat_sessions', 'key_column': 'session_id',
+                           'key_value': sid, 'saved_at': int(time.time() * 1000),
+                           'row': {k: row[k] for k in row.keys()}, 'files': files,
+                           'meta': {'from_cwd': r['cwd'], 'to_root': root,
+                                    'metadata_only': metadata_only}}
+                mp = os.path.join(base, 'items', f'chat_sessions-{sid}.json')
+                with open(mp, 'w', encoding='utf-8') as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+
                 with w:   # 每条独立事务：失败只影响自己
                     w.execute('update chat_sessions set workspace_id=?, cwd=?, execution_target_json=? '
                               'where session_id=?', (ws['workspace_id'], root, et_json, sid))
@@ -1058,14 +1291,26 @@ def cmd_move(args, con, db_path):
                                 'from chat_sessions where session_id=?', (sid,)).fetchone()
                 ok = (chk and chk['workspace_id'] == ws['workspace_id'] and chk['cwd'] == root
                       and load_json(chk['execution_target_json']).get('workspace', {}).get('path') == root)
+                moved_files = sum(1 for f in files if f.get('status') == 'moved')
+                mem = next((f for f in files if f.get('kind') == 'memory'), None)
+                mem_n = len(mem.get('report', {}).get('merged', [])) if mem else 0
                 results.append({'session_id': sid, 'title': r['title'],
                                 'status': 'ok' if ok else 'verify_failed',
-                                'manifest': manifests.get(sid)})
-                out(f"[{'OK' if ok else 'WARN'}] {sid[:8]}  {(r['title'] or '')[:34]}")
+                                'manifest': os.path.basename(mp),
+                                'files_moved': moved_files, 'memory_merged': mem_n})
+                extra = ''
+                if files:
+                    extra = f'  文件 {moved_files}'
+                    if mem:
+                        rep = mem.get('report', {})
+                        extra += f"｜记忆 +{len(rep.get('merged', []))}/跳过 {len(rep.get('skipped', []))}"
+                out(f"[{'OK' if ok else 'WARN'}] {sid[:8]}  {(r['title'] or '')[:30]}{extra}")
             except Exception as ex:
+                if files:
+                    undo_files(files)
                 results.append({'session_id': sid, 'title': r['title'],
                                 'status': 'failed', 'error': str(ex),
-                                'manifest': manifests.get(sid)})
+                                'manifest': None, 'files_moved': 0, 'memory_merged': 0})
                 out(f'[FAIL] {sid[:8]}  {ex}')
     finally:
         w.close()
@@ -1076,6 +1321,8 @@ def cmd_move(args, con, db_path):
     out('')
     out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
     out(f'备份与清单: {base}')
+    if not metadata_only:
+        out('已按默认策略搬运：会话文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('迁移')
@@ -1402,9 +1649,11 @@ def rollback_items(args, con, db_path):
                     payload = json.load(f)
                 with w:
                     n = restore_row(w, payload)
+                notes = undo_files(payload.get('files'))
                 if n:
                     ok += 1
-                    out(f"[OK] {payload['table']}  {str(payload['key_value'])[:8]}")
+                    out(f"[OK] {payload['table']}  {str(payload['key_value'])[:8]}"
+                        + (f"  文件: {'/'.join(sorted(set(notes)))}" if notes else ''))
                 else:
                     fail += 1
                     out(f"[MISS] {payload['table']}  {str(payload['key_value'])[:8]}（未命中）")
@@ -1431,6 +1680,8 @@ def build_parser():
                    help='Qoder 运行时拒绝写入（默认允许热写，写完重启验证）')
     p.add_argument('--backup-dir',
                    help='备份与临时产物根目录（默认 <当前工作目录>/qoder-cm-backups）')
+    p.add_argument('--qoder-home',
+                   help='Qoder 数据根目录（默认 ~/.qoder），用于指向沙箱副本')
     p.add_argument('--version', action='version', version=f'qoder-conversation-manager {VERSION}')
     sub = p.add_subparsers(dest='cmd', required=True)
 
@@ -1441,6 +1692,8 @@ def build_parser():
     common.add_argument('--require-closed', action='store_true', default=argparse.SUPPRESS)
     common.add_argument('--backup-dir', default=argparse.SUPPRESS,
                         help='备份与临时产物根目录（默认 ./qoder-cm-backups）')
+    common.add_argument('--qoder-home', default=argparse.SUPPRESS,
+                        help='Qoder 数据根目录（默认 ~/.qoder）')
 
     sub.add_parser('doctor', parents=[common], help='体检：库/表/进程/路径/影子/备份')
 
@@ -1481,6 +1734,8 @@ def build_parser():
                     help='真正落盘')
     mp.add_argument('--skip-in-target', action='store_true', default=True,
                     help='已在目标工作区的会话自动跳过（默认开启）')
+    mp.add_argument('--metadata-only', action='store_true', dest='metadata_only',
+                    help='只改数据库归属，不搬会话文件/记忆/产出')
 
     wp = sub.add_parser('workspace', parents=[common], help='工作区管理')
     wsub = wp.add_subparsers(dest='ws_cmd', required=True)
@@ -1517,11 +1772,13 @@ def build_parser():
 
 
 def main(argv=None):
-    global CUSTOM_DB, BACKUP_ROOT
+    global CUSTOM_DB, BACKUP_ROOT, QODER_HOME_OVERRIDE
     parser = build_parser()
     args = parser.parse_args(argv)
     if getattr(args, 'backup_dir', None):
         BACKUP_ROOT = os.path.abspath(args.backup_dir)
+    if getattr(args, 'qoder_home', None):
+        QODER_HOME_OVERRIDE = os.path.abspath(args.qoder_home)
     default = None
     for cand in qoder_db_candidates():
         if os.path.isfile(cand):
