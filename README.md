@@ -11,7 +11,7 @@
 
 一个给 AI Agent 用的技能：管理本机 **Qoder** 的会话与工作区——列出筛选、按完整对话历史重命名、迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。
 
-> A portable agent skill for managing local **Qoder** sessions and workspaces: list & filter, rename from the full transcript, move between workspaces, create/rename/retarget/archive/delete workspaces, backup & rollback, and a 7-point doctor.
+> A portable agent skill for managing local **Qoder** tasks and workspaces: list & filter, rename from the full transcript, move between workspaces, create/rename/retarget/archive/delete workspaces, backup & rollback, and a 7-point doctor.
 
 ---
 

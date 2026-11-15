@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.3.9 — 2026-11-15
+
+英文描述改用 Tasks，纠正 1.3.7 / 1.3.8 的判断错误。
+
+- 实测本机 Qoder 0.5.12 的 `app.asar`，i18n 里 `sessions` 这个 key 的中文值是「任务」、英文值是 **`Tasks`**、韩文是「작업」。也就是说 `sessions` 只是代码里的键名，英文界面显示的本来就是 Tasks。
+- 此前认为「英文界面叫 sessions、改成 tasks 会对不上界面」是错的，实际正好相反。
+- `description_en`、`examples_en`、正文英文摘要、README、PUBLISHING 的英文简介统一改为 tasks。
+- 保留不变：`qoder-conversation-manager`（slug/name）、`Qoder Conversation Manager`（英文品牌名）、`chat_sessions` 等数据库标识。
+- 无功能改动。
+
 ## 1.3.8 — 2026-11-15
 
 示例数据术语对齐，1.3.7 的收尾。

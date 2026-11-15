@@ -27,7 +27,7 @@
 
 **英文简介**
 
-> Manage Qoder desktop sessions and workspaces — rename from full transcripts, move between workspaces, backup & rollback, with dry-run default and per-object backups.
+> Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, with dry-run default and per-object backups.
 
 **适用场景**
 

@@ -7,7 +7,7 @@ category: dev-programming
 name: qoder-conversation-manager
 description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
 description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。默认干跑，按对象备份，拒绝影子任务。
-description_en: Manage Qoder desktop sessions and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
+description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
 display_name: Qoder任务管理
 display_name_zh: Qoder任务管理
 display_name_en: Qoder Conversation Manager
@@ -16,18 +16,18 @@ examples_zh:
   - "把 NAS 相关的任务都归到 NAS 工作区，附件和产出一起带过去"
   - "给 Qoder 做一次体检，看工作区路径和备份有没有异常"
 examples_en:
-  - "Batch rename Qoder sessions whose titles are too short"
-  - "Move all NAS-related conversations into the NAS workspace, files included"
+  - "Batch rename Qoder tasks whose titles are too short"
+  - "Move all NAS-related tasks into the NAS workspace, files included"
   - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.3.8
+version: 1.3.9
 tags: [Qoder, 任务管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
 
 # Qoder 任务管理
 
-Manage local Qoder sessions and workspaces: list/filter, rename from full transcript,
+Manage local Qoder tasks and workspaces: list/filter, rename from full transcript,
 move to a workspace, create/rename/retarget/archive/delete workspaces, backup/rollback, doctor.
 
 ## 这个技能做什么
