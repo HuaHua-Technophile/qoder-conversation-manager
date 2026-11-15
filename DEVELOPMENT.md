@@ -8,7 +8,7 @@
 
 ```
 ~/.workbuddy/skills/qoder-conversation-manager
-        └─(symlink)→ X:/qoder-conversation-manager/repo/skills/qoder-conversation-manager
+        └─(symlink)→ C:/Users/HuaHua/dev/qoder-conversation-manager/skills/qoder-conversation-manager
 ```
 
 改仓库里的文件，等于直接改运行时——不用复制、不用重装、不用重启 WorkBuddy（新会话即生效）。
@@ -35,17 +35,14 @@ Windows 建符号链接需要**开发者模式**或管理员权限。
 - Python 3.9+（脚本只用标准库，无第三方依赖）
 - Windows（脚本针对 Qoder 桌面端的本地数据）
 - git 走 SSH（本机已配 `github_huahua_pc`）
-
-> X: 盘实际是 UNC 路径 `//huahua-book/B/`（笔记本 SMB 共享）。首次 clone 到网络盘需信任目录：
-> `git config --global --add safe.directory '%(prefix)///huahua-book/B/qoder-conversation-manager/repo'`
-> 笔记本离线时仓库不可用。
+- 仓库必须放**本地磁盘**：技能目录是指向它的符号链接，仓库在网络盘上时，笔记本离线技能会跟着失效
 
 ## 三、改代码的完整流程
 
 ### 1. 改之前先拉最新
 
 ```bash
-cd X:/qoder-conversation-manager/repo
+cd C:/Users/HuaHua/dev/qoder-conversation-manager
 git pull
 ```
 
@@ -95,7 +92,7 @@ python scripts/qoder_sessions.py rename --db /tmp/test.sqlite --ids xxx --apply
 ### 5. 提交推送
 
 ```bash
-cd X:/qoder-conversation-manager/repo
+cd C:/Users/HuaHua/dev/qoder-conversation-manager
 git add -A
 git commit -m "feat(vX.Y.Z): 一句话说明"
 git push
@@ -148,7 +145,7 @@ WorkBuddy 那次需要手动：拿 `dist/qoder-conversation-manager-dir-<版本>
 
 **`skillhub publish` 会打包整个目录**：临时文件、`__pycache__`、`dist/` 都会进去。发布前确认目录干净。
 
-**符号链接依赖网络盘**：`X:` 是笔记本的 SMB 共享，笔记本关机或离线时链接断掉，WorkBuddy 会读不到这个技能。要彻底离线可用，把仓库迁到本地磁盘再重建链接。
+**仓库不要放网络盘**：技能目录是指向仓库的符号链接。仓库若落在 SMB 共享上（例如 `X:` ＝ `//huahua-book/B/`），笔记本离线时链接会断、技能读不到。仓库固定在 `C:\Users\HuaHua\dev\` 就没有这个问题；而工作区（对话空间）照旧放 SMB 互不影响，两者可以分开。
 
 ## 六、改完之后
 
