@@ -13,6 +13,11 @@
 | Qoder 技能市场 | ⏳ 待提交 | 公开市场走拓展发布；**客户端本地已装 1.6.0**（`~/.qoder/skills/qoder-task-manager`） |
 | skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
 
+> **发布以 CI 为准**：本机直接 `publish` 上传会被重置（`[Errno 10054] 远程主机强迫关闭了一个现有的连接`），`auth whoami` 这类 GET 正常、POST 上传不通，疑似本地网络/代理对 multipart 的处理问题。CI 用同样的 CLI 与打包方式（剔除 `assets/`）可以成功，不要在本地反复重试，否则可能留下重复版本记录。
+>
+> **核对线上到底是不是新版**：直接下包比对，比刷页面可靠——
+> `curl -sSL "https://api.skillhub.cn/api/v1/download?slug=%40user_3c4d2464%2Fqoder-task-manager" -o sh.zip`，解压读 `SKILL.md` 的 `version`。列表页与下载包都按「已过审版本」呈现，刚发布时仍是上一版。
+
 ## 提交材料
 
 - **标识名**：`qoder-task-manager`（小写字母、数字、连字符）
