@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.4.4 — 2026-11-15
+
+统一换行符，消除跨平台 diff 噪音。功能无变化。
+
+- 新增 `.gitattributes`：`* text=auto eol=lf`，文本文件在仓库存储与工作区检出两侧统一为 LF；png/jpg/zip 标记为二进制，不做转换。
+- 此前 `core.autocrlf=true` 使 blob 存 LF 而工作区检出 CRLF，同一文件在不同机器、不同工具下形态不一致，用脚本批量改写后再复制容易整文件 diff。现在两侧一致，也不再依赖各人的 git 配置。
+- `SKILL.md`、脚本、`references/`、`examples/` 等 14 个文本文件转为 LF，**内容零改动**（`git diff` 为空，仅换行符变化）；`--version` 与 `doctor` 七项复测通过。
+- 发布包内容不变，仍为 11 个文件；zip 体积各减约 3KB（CRLF 相对 LF 每行多一个字节）。
+
 ## 1.4.3 — 2026-11-15
 
 修复 `workspace retarget --apply` 必定崩溃，并纠正影子任务判断。

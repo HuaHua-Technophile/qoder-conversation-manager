@@ -1,0 +1,11 @@
+# 文本文件统一 LF：仓库存储与工作区检出保持一致，避免换行符漂移。
+# 显式声明后不再依赖 core.autocrlf，任何人 clone 都得到相同结果。
+* text=auto eol=lf
+
+# 二进制文件不做换行符转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.pyc binary
