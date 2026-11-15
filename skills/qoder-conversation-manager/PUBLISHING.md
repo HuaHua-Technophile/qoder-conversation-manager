@@ -7,7 +7,7 @@
 | 平台 | 状态 | 说明 |
 |---|---|---|
 | GitHub | ✅ 已发布 v1.3.6 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release |
-| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.5<br>⏳ v1.3.6 审核中 | CLI 发布，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
+| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.6<br>⏳ v1.3.7 审核中 | 已全自动，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已改用 `skills/<name>/` 布局，等它下次扫描 |
 | WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 1.3.5 | 能力 ID `os_f2f623a10e63b114`，公开。**今日提审额度已满 5/5**（当月 5/20），次日恢复后可传 `-dir` 包 |
 | Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
@@ -218,7 +218,7 @@ python skills/qoder-conversation-manager/scripts/build_pkg.py
 |---|---|---|
 | GitHub Release | ✅ 全自动 | `.github/workflows/release.yml`，push tag `v*` 即打包并发布 |
 | skills.sh | ✅ 被动自动 | 无接口，它自己扫仓库，推上去等它收录 |
-| SkillHub | ⚠️ 可自动但未开 | 有 CLI 可挂 Actions，需把 API Token 存 `SKILLHUB_KEY` secret |
+| SkillHub | ✅ 全自动 | 同一 workflow 的 `skillhub` job，Release 建好后自动发布。Token 存在仓库 secret `SKILLHUB_KEY` |
 | WorkBuddy 开放平台 | ❌ 只能手动 | 官方文档确认无 API / CLI / CI，仅控制台上传 zip，另有提审额度 |
 
 **标准流程（GitHub 全自动）**
@@ -240,10 +240,15 @@ CI 会先校验 tag 与两处 `VERSION` 是否一致，再打包上传；不一�
 需要补发历史版本或重跑时，用 `workflow_dispatch` 手动指定 tag：
 
 ```bash
-gh workflow run Release --repo HuaHua-Technophile/qoder-conversation-manager -f tag=v1.3.6
+gh workflow run Release --repo HuaHua-Technophile/qoder-conversation-manager -f tag=v1.3.7
 ```
 
-之后按需手动处理两个外部渠道：SkillHub 传包（或后续接 Actions）、WorkBuddy 控制台上传 `-dir` 包。
+**SkillHub 自动发布的两个坑**
+
+1. **不能另建 release-triggered workflow**：用 `GITHUB_TOKEN` 创建的 Release 不会触发其它 workflow（GitHub 防递归）。所以 SkillHub 发布必须做成**同一个 workflow 的第二个 job**（`needs: release`）。
+2. **必须先剔除 `assets/`**：CLI 会把技能目录下所有文件打包上传，而仓库里的 `assets/*.png` 会被平台拒（`400 不允许的文件类型`）。CI 里是先 `cp` 到临时目录再 `rm -rf .../assets`。本地发布之所以没这个问题，是因为安装目录本来就不含 assets。
+
+之后只剩 WorkBuddy 需要手动：控制台上传 `-dir` 包。
 
 ## 发布前自检
 
