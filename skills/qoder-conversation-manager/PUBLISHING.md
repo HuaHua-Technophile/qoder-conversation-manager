@@ -7,6 +7,7 @@
 | 平台 | 状态 | 说明 |
 |---|---|---|
 | GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，Release 含两个安装包 |
+| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.3<br>⏳ v1.3.5 审核中 | CLI 发布，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标与分类（开发编程）均已就位 |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核：技能页提示不在该仓库下，发布者页 404。该站按 `npx skills add` 安装量索引，无手动提交入口；根目录 SKILL.md 的布局可能不被识别为仓库内的 skill。 |
 | WorkBuddy 开放平台 | ⏳ 待提交 | 需开发者认证；提审有配额（当日 5 次 / 当月 20 次） |
 | Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
@@ -41,7 +42,104 @@
 - 只操作本机 Qoder 数据；跨设备影子会话只读
 - 全局记忆 `~/.qoder/memory/` 不随迁移变动
 
-## 渠道一：WorkBuddy 开放平台
+## 渠道一：SkillHub（skillhub.cn）
+
+CLI 是纯 Python 单文件，**Windows 不需要 WSL**（官方教程只提 Mac/Linux，实测 Git Bash + Python 3.13 可跑）。
+
+**一次性安装**
+
+```bash
+curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/latest.tar.gz -o /tmp/kit.tar.gz
+mkdir -p /tmp/kit && tar -xzf /tmp/kit.tar.gz -C /tmp/kit
+mkdir -p ~/.skillhub ~/.local/bin
+cp /tmp/kit/cli/skills_store_cli.py /tmp/kit/cli/skills_upgrade.py \
+   /tmp/kit/cli/version.json /tmp/kit/cli/metadata.json ~/.skillhub/
+printf '{\n  "self_update_url": "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/version.json",\n  "auto_self_upgrade": false\n}\n' > ~/.skillhub/config.json
+```
+
+之后统一用 `python3 ~/.skillhub/skills_store_cli.py <cmd>`，不依赖 wrapper 与 PATH。
+
+**登录**：Token 在 <https://skillhub.cn/dashboard/keys> 创建（`skh_` 前缀，仅显示一次）。
+
+```bash
+python3 ~/.skillhub/skills_store_cli.py login --key skh_xxx --host https://api.skillhub.cn
+python3 ~/.skillhub/skills_store_cli.py auth whoami
+```
+
+**frontmatter 要求**：平台只读 `slug` / `version` / `displayName` / `summary` / `description` / `tags` / `license` / `homepage` 这几个**驼峰**字段，WorkBuddy 用的 `display_name`、`description_zh` 它**不认**。所以 SKILL.md 头部必须同时写两套：
+
+```yaml
+slug: qoder-conversation-manager      # 全网唯一，kebab-case
+displayName: Qoder会话管理              # 驼峰，平台用
+summary: ……                            # 平台列表页简介
+iconUrl: https://…png                  # 图标，先调 skill-icons/upload 拿
+categoryIds: [dev-programming]         # 分类 key 数组
+name: qoder-conversation-manager      # 下划线族，WorkBuddy 用
+display_name: Qoder会话管理
+```
+
+**发布**
+
+```bash
+python3 ~/.skillhub/skills_store_cli.py publish <skill-dir> --dry-run
+python3 ~/.skillhub/skills_store_cli.py publish <skill-dir> --changelog "本次变更"
+```
+
+成功输出 `✓ Published: skillId=xxxxx`。CLI **不回传 URL 和 status**，需到 <https://skillhub.cn/dashboard> 看：审核中 → `安全审核中`，通过后详情页 `https://skillhub.cn/skills/<slug>` 才完整可读。
+
+**图标与分类（CLI 不带，必须自己补）**
+
+平台把图标和分类放在 publish 的 payload 里，CLI 只传了 slug/version/displayName/summary/description/tags/license/homepage，所以发出来是默认占位图 + 未分类。
+
+图标可以绕过界面直接补：
+
+```bash
+curl -X POST "https://api.skillhub.cn/api/v1/community/skill-icons/upload" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@icon-512.png;type=image/png"
+# → {"iconUrl":"https://...cos.accelerate.myqcloud.com/skill-icons/uploads/<uid>/<hash>.png"}
+```
+
+拿到 `iconUrl` 后写进 frontmatter，并给本地 CLI 补三个字段（`~/.skillhub/skills_store_cli.py` 的 `_post_publish_multipart`，约 2500 行）：
+
+```python
+_icon = str(metadata.get("iconUrl") or "").strip()
+if _icon:
+    payload["iconUrl"] = _icon
+_cat = str(metadata.get("category") or "").strip()   # 一级分类 key
+if _cat:
+    payload["category"] = _cat
+_subs = metadata.get("subCategories")                # 二级分类 key 数组，可选
+if isinstance(_subs, list):
+    _subs = [str(c).strip() for c in _subs if str(c).strip()]
+    if _subs:
+        payload["subCategories"] = _subs
+```
+
+然后 bump 版本重发（**同版本号会被拒**：`slug 冲突: 版本 x.y.z 已存在，请使用新的版本号发布`）。
+
+**分类字段是 `category`，不是 `categoryIds`** —— 这条坑了两次：
+
+- `categoryIds` 是**企业/团队版** Skill 的字段（对应数字 id）。普通 Skill 传它会被服务端静默忽略，不报错，只是 `skill.category` 永远为空、后台一直显示「未分类」。
+- 普通 Skill 用 `category`（一级分类 key，如 `dev-programming`）。实测**新建和更新版本都能写入**，无需重建。
+
+一级分类 key（`GET /api/v1/categories`，共 13 个）：`office-efficiency` 办公效率、`content-creation` 内容创作、`dev-programming` 开发编程、`data-analysis` 数据分析、`design-media` 设计多媒体、`ai-agent`、`knowledge-management` 知识管理、`business-ops` 商业运营、`education` 教育学习、`professional` 行业专业、`it-ops-security` IT 运维与安全、`life-service` 生活服务、`pay-skill`。
+
+**验证方法**（不用开浏览器）：
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.skillhub.cn/api/v1/skills/<slug>" | python3 -m json.tool | grep -E 'category|iconUrl'
+```
+
+**已知限制**
+
+- 同 slug 重复发布 = 该 skill 的新版本（skillId 不变），但**版本号必须递增**。
+- 审核中详情页「概述」区会显示 `无法加载文档 skill not found`，过审后自动正常。
+- 网页「发布新技能」表单对已有 slug 会提示「该 Slug 已被占用」，不能拿来改已有 skill。
+- 「从 GitHub 导入」能自动识别仓库 `skills/<name>/` 布局并推断 slug，但同样走新建流程。
+
+## 渠道二：WorkBuddy 开放平台
 
 1. 打开 <https://open.workbuddy.cn>，完成开发者认证（个人：身份材料 + 人脸）。
 2. 左侧「发布管理 → 技能 → 创建」。
@@ -65,7 +163,7 @@
 
 > 提审有额度：页面显示「当日 5 次、当月 20 次」，改完再传，别浪费在格式错误上。
 
-## 渠道二：Qoder
+## 渠道三：Qoder
 
 **自用安装**（不需要审核）：
 
@@ -80,7 +178,7 @@
 3. Skill 为机审为主、人工抽检，通常数分钟出结果。
 4. 指南：<https://docs.qoder.com/zh/qoderwork/skill-marketplace-guidelines>
 
-## 渠道三：第三方目录（可选）
+## 渠道四：第三方目录（可选）
 
 - **skills.sh**：`npx skills add HuaHua-Technophile/qoder-conversation-manager` 即可安装，收录后出现在目录索引。
 - **skillstore.io**：<https://skillstore.io/submit> 填仓库地址，自动扫描后人工审核。

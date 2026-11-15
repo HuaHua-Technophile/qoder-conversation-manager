@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## 1.3.5 — 2026-11-15
+
+修正上架分类字段：普通 Skill 认 `category`，不认 `categoryIds`。
+
+- `categoryIds` 是企业/团队版 Skill 用的字段，普通发布传它会被服务端静默忽略，表现为上架后长期「未分类」。
+- 改为 `category: dev-programming`（一级分类 key），实测新建与**更新版本**都能写入。
+- 仍不含脚本逻辑改动，清单页行为与 1.3.4 一致。
+
+## 1.3.4 — 2026-11-15
+
+补齐 SkillHub 上架所需的驼峰元数据与图标，无脚本逻辑改动。
+
+- frontmatter 增加 `slug` / `displayName` / `summary`：SkillHub CLI 只认驼峰字段，此前只有 WorkBuddy 用的下划线族，CLI 校验会直接报「缺少 slug」。
+- frontmatter 增加 `iconUrl`：平台的图标要在发布 payload 里带，CLI 默认不传，上架后是默认占位图。
+- 两套字段并存，WorkBuddy 的 `name` / `display_name` / `description_zh` 不受影响。
+
+## 1.3.3 — 2026-11-15
+
+frontmatter 增加 `examples_zh` / `examples_en` / `author`，市场上架时「试试这样问我」不再为空。
+
 ## 1.3.2 — 2026-11-15
 
 产出识别补第三路：会话专属 cwd。
