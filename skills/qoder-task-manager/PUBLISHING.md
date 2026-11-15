@@ -6,12 +6,27 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 v1.6.0 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release（run 43732129885，44s，两个 zip） |
-| SkillHub（skillhub.cn） | ✅ 已提交 v1.6.0<br>⏳ 列表页仍显示 v1.4.4 | CI 自动发布成功（日志 `✓ Published: skillId=322075`）；平台列表页按「已过审版本」展示，需等审核刷新。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager) |
-| skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已是 `skills/<name>/` 布局，等它下次扫描 |
-| WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 v1.6.0 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**；当日提审额度 5/5 已满（当月 5/20），次日恢复 |
-| Qoder 技能市场 | ⏳ 待提交 | 公开市场走拓展发布；**客户端本地已装 1.6.0**（`~/.qoder/skills/qoder-task-manager`） |
+| GitHub | ✅ 已发布 v1.7.0 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。Actions run `43736889949`，`release` + `skillhub` 两个 job 全绿（16:41:32 → 16:42:11Z）；[Release](https://github.com/HuaHua-Technophile/qoder-task-manager/releases/tag/v1.7.0) 两个 zip：`dir` 87,564 B / `root` 87,146 B |
+| SkillHub（skillhub.cn） | ✅ 已发布 v1.7.0（安全审核通过） | CI 自动发布。API 实测 `latestVersion.version=1.7.0`、9 个 tag 均指向 1.7.0、`category=dev-programming`、`iconUrl` 走 jsdelivr、`securityReports`（keen / sanbu）均 `benign`「安全，无风险」。**下载端点仍返回 1.6.0**（过审快照/CDN 滞后，以 API 为准） |
+| skills.sh（Vercel Labs 目录） | ⚠️ 未收录（2026-11-16 复核仍 404） | 该站按 `npx skills add` 安装量索引，**无手动上传入口**；搜索页只回显查询词、无结果条目，详情页 404。仓库已是 `skills/<name>/` 布局，等它下次扫描 |
+| WorkBuddy 开放平台 | ⏳ 待更新 v1.7.0 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**。本轮自动化通道不可用（见下方「GUI 通道故障记录」），需人工上传；包已就绪：`dist/qoder-task-manager-dir-1.7.0.zip` |
+| Qoder 技能市场 | ⏳ 待提交（本地已装 1.7.0） | 公开市场走拓展发布；本机 `~/.qoder/skills/qoder-task-manager` 已 `install.py` 同步到 1.7.0 |
 | skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
+
+### v1.7.0 发布核验记录（2026-11-16）
+
+| 平台 | 核验手段 | 结论 |
+|---|---|---|
+| GitHub | `gh release view` + `gh run view --log` | 两资产齐、CI 测试步骤 `Ran 51 tests / OK (skipped=1)`（Linux 跳 1 条 nt-only 断言） |
+| SkillHub | `GET /api/v1/skills/qoder-task-manager`（公共接口，无需 token） | `latestVersion=1.7.0`、安全扫描 benign、分类与图标已写入 |
+| skills.sh | `curl` 搜索页 + 详情页状态码 | 搜索无结果条目、详情页 404 → 未收录（预期） |
+| WorkBuddy | 浏览器 MCP / ComputerUse | **两条通道均不可用**，见下 |
+
+**GUI 通道故障记录（本轮实测，非操作问题）**
+
+- **Browser Use（内置浏览器）**：`dom_cua_get_visible_dom` 对 GitHub / skills.sh / `example.com` **一律返回空 snapshot**；`tab_screenshot` 连 200×200 的裁剪也报 `exceeds the 10 MiB image limit`（clip 未生效，整屏采集）。页面本身加载正常（`tab_title` 正确）。→ 无法读页面、也无法点击。
+- **Computer Use**：`gui_permission_status` = `ready`（`all_granted:true`），`gui_screenshot(window_id="child_session")` 能正常出图；但 `create_task` 连续两次在 **step 0** 返回 `error: LLM: timeout`（各耗 600s，`history: []`），即内置 GUI agent 的推理侧超时。→ 截图可用，但主 agent 没有坐标点击工具，无法自行操作页面。
+- 结论：本轮 WorkBuddy 上传只能人工完成。人工步骤见「渠道二」，用 `-dir` 包，注意当日/当月提审额度。
 
 > **发布以 CI 为准**：本机直接 `publish` 上传会被重置（`[Errno 10054] 远程主机强迫关闭了一个现有的连接`），`auth whoami` 这类 GET 正常、POST 上传不通，疑似本地网络/代理对 multipart 的处理问题。CI 用同样的 CLI 与打包方式（剔除 `assets/`）可以成功，不要在本地反复重试，否则可能留下重复版本记录。
 >
