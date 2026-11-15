@@ -154,9 +154,10 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 1. 数据库：`workspace_id`、`cwd`、`execution_target_json.workspace.{id,path}` 一起改；
 2. 会话文件：`projects/<旧cwd编码>/<sid>.jsonl` 与 `<sid>/` 子目录 → `projects/<新cwd编码>/`；
 3. 项目记忆：旧项目的 `memory/` → 目标项目，`MEMORY.md` 逐行去重追加，同名不同内容另存为带时间戳文件；
-4. 产出：两路合并后按相对路径搬到新工作区根，**旧路径留硬链接**（跨盘失败则复制），历史里的旧链接仍能打开：
+4. 产出：三路合并后按相对路径搬到新工作区根，**旧路径留硬链接**（跨盘失败则复制），历史里的旧链接仍能打开：
    - `turn_file_change_files` 的索引记录（覆盖不全，只记进过评审的 turn）；
-   - **会话正文里 `Write` / `Edit` / `MultiEdit` / `NotebookEdit` 调用过的 `file_path`**，覆盖面明显更广。
+   - **会话正文里 `Write` / `Edit` / `MultiEdit` / `NotebookEdit` 调用过的 `file_path`**，覆盖面明显更广；
+   - **会话专属 `cwd`**（末段等于会话 ID 前 8 位，例如 `Qoder/2026-11-15/11679d46`）下的**全部顶层条目**——这类临时目录整份都属于该会话，用 Bash 创建的目录/日志也能覆盖。
 
 只搬**落在该会话 `cwd` 之下**的文件。指向其他目录的路径（比如改过 `~/.qoder/skills` 里的文件）属于外部引用，不会被搬进工作区。
 
@@ -267,7 +268,8 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 2. **允许热写**：Qoder 运行中也能写（WAL 保证一致性），写完必须重启应用做一次重建验证；要硬性拦截用 `--require-closed`。
 3. **按对象备份**：每条被改动的会话在 `./qoder-cm-backups/<动作>-<时间戳>/items/` 下存一份完整行，`batch.json` 汇总，支持单条或整批回滚。备份与临时产物都放在**当前工作目录**，不写入数据库目录。
 4. **每条独立事务**：批量操作某条失败只影响它自己，其余继续；结束后按成功/失败计数返回退出码。
-5. **破坏性操作仍做整库快照**（`./qoder-cm-backups/db/`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
+5. **无归属会话不动**：`workspace_id` 为空的会话默认留在原处，不主动整理、不询问用户要不要归类；只有用户明确点名要迁移时才处理。
+6. **破坏性操作仍做整库快照**（`./qoder-cm-backups/db/`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
 6. **影子会话一律拒绝**改名与迁移，并在输出里说明原因。这是 Qoder 特有的数据形态——`peerOriginSessionId` 非空的会话正文在另一台设备，本机只有元数据，改了会被同步覆盖。
 7. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
 8. **搬文件前先备份**：会话文件、子目录、记忆、产出在移动前都会复制到备份组的 `files/<sid>/` 下。

@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.3.1'
+VERSION = '1.3.2'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -1156,6 +1156,23 @@ def merge_memory(src_dir, dst_dir):
     return rep
 
 
+def is_dedicated_cwd(cwd, sid):
+    """末段等于会话 ID 前 8 位时，视为该会话独占的临时工作目录。"""
+    if not cwd or not sid:
+        return False
+    return os.path.basename(os.path.normpath(cwd)).lower() == sid[:8].lower()
+
+
+def cwd_entries(cwd, sid):
+    """专属 cwd 下的全部顶层条目（文件与目录）。"""
+    if not is_dedicated_cwd(cwd, sid) or not os.path.isdir(cwd):
+        return []
+    out = []
+    for name in os.listdir(cwd):
+        out.append(os.path.join(cwd, name))
+    return out
+
+
 def path_under(p, root):
     if not p or not root:
         return False
@@ -1204,7 +1221,7 @@ def tool_output_paths(jsonl_path, root):
     return out
 
 
-def session_outputs(con, sid, extra=None):
+def session_outputs(con, sid, extra=None, old_cwd=None):
     """该会话涉及的文件（绝对源路径）。DB 索引 + 调用方给的正文路径两路合并。"""
     found = {}
     try:
@@ -1233,6 +1250,9 @@ def session_outputs(con, sid, extra=None):
     for p in (extra or ()):
         if p:
             found.setdefault(os.path.normcase(p), p)
+
+    for p in cwd_entries(old_cwd, sid):
+        found.setdefault(os.path.normcase(p), p)
 
     return list(found.values())
 
@@ -1279,7 +1299,7 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
                              'status': 'skipped-shared',
                              'reason': f'旧项目仍有 {project_sessions(old_proj) - 1} 条其他会话'})
 
-    for src in session_outputs(con, sid, extra_paths):
+    for src in session_outputs(con, sid, extra_paths, old_cwd):
         try:
             rel = os.path.relpath(src, old_cwd)
         except Exception:
