@@ -11,3 +11,4 @@ qoder-rename-export/
 exp/
 titles*.json
 !titles.example.json
+dist/
