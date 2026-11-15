@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.2.0'
+VERSION = '1.2.1'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -538,6 +538,41 @@ def cmd_doctor(args, con, db_path):
     else:
         add('备份', True, f'{work_root()}｜尚无备份，首次写入会自动创建')
 
+    if getattr(args, 'deep', False):
+        try:
+            drows = session_rows(con, include_deleted=False, include_peer=False)
+            missing = mismatch = 0
+            for r in drows:
+                cur = find_project_dir(r['session_id'])
+                if not cur:
+                    missing += 1
+                    continue
+                want_dir = os.path.join(projects_root(), encode_cwd(r['cwd']))
+                if os.path.normcase(cur) != os.path.normcase(want_dir):
+                    mismatch += 1
+            add('会话文件', missing == 0,
+                f'{len(drows)} 条会话均有正文文件' if missing == 0
+                else f'{missing}/{len(drows)} 条缺正文文件')
+            add('目录一致性', mismatch == 0,
+                '项目目录与 cwd 全部一致' if mismatch == 0
+                else f'{mismatch} 条目录与 cwd 不一致，可用 repair 修复')
+            mem_dirs = []
+            proot = projects_root()
+            if os.path.isdir(proot):
+                for name in os.listdir(proot):
+                    mp = os.path.join(proot, name, 'memory')
+                    if os.path.isdir(mp):
+                        n_mem = len([f for f in os.listdir(mp) if os.path.isfile(os.path.join(mp, f))])
+                        if n_mem:
+                            mem_dirs.append((name, n_mem))
+            add('项目记忆', True,
+                f'{len(mem_dirs)} 个项目共 {sum(n for _, n in mem_dirs)} 个记忆文件'
+                if mem_dirs else '尚无项目记忆')
+            n_out = con.execute('select count(distinct session_id) from turn_file_change_sets').fetchone()[0]
+            add('产出索引', True, f'{n_out} 条会话有产出记录')
+        except Exception as ex:
+            add('深度检查', False, str(ex))
+
     if args.json:
         print(json.dumps({'db': db_path, 'version': VERSION, 'checks': results}, ensure_ascii=False, indent=2))
         return 0 if all(r['ok'] for r in results) else 1
@@ -1007,6 +1042,12 @@ def find_project_dir(sid):
     return None
 
 
+def project_sessions(proj_dir):
+    if not proj_dir or not os.path.isdir(proj_dir):
+        return 0
+    return len([f for f in os.listdir(proj_dir) if f.endswith('.jsonl')])
+
+
 def unique_path(p):
     if not os.path.exists(p):
         return p
@@ -1114,8 +1155,12 @@ def session_outputs(con, sid):
     return out
 
 
-def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=False):
-    """搬会话文件、项目记忆与产出；返回记录列表。"""
+def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=False,
+                           memory_mode='always'):
+    """搬会话文件、项目记忆与产出；返回记录列表。
+
+    memory_mode: always=总是合并；auto=仅当旧项目再无其他会话时合并。
+    """
     recs = []
     if metadata_only:
         return recs
@@ -1132,14 +1177,22 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
                                base, sid, 'session', 'sidecar'))
         mem_old = os.path.join(old_proj, 'memory')
         if os.path.isdir(mem_old):
-            try:
-                backup_path(mem_old, base, sid, 'memory')
-            except Exception:
-                pass
-            rep = merge_memory(mem_old, os.path.join(new_proj, 'memory'))
-            recs.append({'kind': 'memory', 'src': mem_old,
-                         'dst': os.path.join(new_proj, 'memory'),
-                         'status': 'merged', 'report': rep})
+            shared = project_sessions(old_proj) > 1
+            do_merge = memory_mode == 'always' or (memory_mode == 'auto' and not shared)
+            if do_merge:
+                try:
+                    backup_path(mem_old, base, sid, 'memory')
+                except Exception:
+                    pass
+                rep = merge_memory(mem_old, os.path.join(new_proj, 'memory'))
+                recs.append({'kind': 'memory', 'src': mem_old,
+                             'dst': os.path.join(new_proj, 'memory'),
+                             'status': 'merged', 'report': rep})
+            else:
+                recs.append({'kind': 'memory', 'src': mem_old,
+                             'dst': os.path.join(new_proj, 'memory'),
+                             'status': 'skipped-shared',
+                             'reason': f'旧项目仍有 {project_sessions(old_proj) - 1} 条其他会话'})
 
     seen = set()
     for item in session_outputs(con, sid):
@@ -1152,6 +1205,8 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
         seen.add(key)
         src = os.path.join(root_old, rel.replace('/', os.sep))
         dst = os.path.join(new_root, rel.replace('/', os.sep))
+        if os.path.normcase(src) == os.path.normcase(dst):
+            continue
         rec = move_entry(src, dst, base, sid, 'output', 'output')
         if rec['status'] == 'moved':          # 旧路径留链接，历史引用仍可用
             try:
@@ -1333,6 +1388,88 @@ def cmd_move(args, con, db_path):
 
 
 # ---------------------------------------------------------------- workspace
+
+def cmd_repair(args, con, db_path):
+    """补齐历史上「只改库没搬文件」的会话：按当前 cwd 把会话文件、记忆、产出归位。"""
+    rows = session_rows(con, include_deleted=False, include_peer=False)
+    if getattr(args, 'ids', None):
+        want = [x.strip() for x in args.ids.split(',') if x.strip()]
+        rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
+    plan = []
+    for r in rows:
+        cur = find_project_dir(r['session_id'])
+        want_dir = os.path.join(projects_root(), encode_cwd(r['cwd']))
+        if cur and os.path.normcase(cur) == os.path.normcase(want_dir):
+            continue
+        plan.append((r, cur, want_dir))
+
+    if not plan:
+        out('没有需要修复的会话：所有项目目录都与当前 cwd 一致')
+        return 0
+
+    if not args.json:
+        out(f'待修复 {len(plan)} 条（数据库不动，只搬文件）')
+        out('')
+        for r, cur, want_dir in plan:
+            out(f"  {r['session_id'][:8]}  {(r['title'] or '')[:32]}")
+            out(f"      归属 {r['cwd']}")
+            out(f"      目录 {os.path.basename(cur) if cur else '(无)'}  ->  {os.path.basename(want_dir)}")
+        out('')
+        out('记忆策略：源目录只有这一条会话时合并其项目记忆；共用目录的记忆留在原项目，避免复制污染。')
+
+    # 按源目录统计：只有「该目录仅此一条会话」时才算独享，才搬记忆
+    dir_counts = {}
+    for r, cur, _want in plan:
+        if cur:
+            dir_counts[cur] = project_sessions(cur)
+    explicit = getattr(args, 'memory_mode', None)
+
+    if not args.apply_flag:
+        if not args.json:
+            ded = sum(1 for _r, cur, _w in plan if cur and dir_counts.get(cur) == 1)
+            out('')
+            out(f'其中 {ded} 条来自独享目录（记忆会合并），{len(plan) - ded} 条来自共用目录（记忆留在原项目）')
+            out('[DRY-RUN] 未写入。加 --apply 执行。')
+        return 0
+
+    gate_running(getattr(args, 'require_closed', False))
+    base = new_backup_set(db_path, 'repair')
+    results = []
+    for r, cur, want_dir in plan:
+        sid = r['session_id']
+        recs = []
+        try:
+            mode = explicit or ('always' if cur and dir_counts.get(cur) == 1 else 'never')
+            recs = move_files_for_session(con, sid, r['cwd'], r['cwd'], base, False,
+                                          memory_mode=mode)
+            moved = sum(1 for x in recs if x.get('status') == 'moved')
+            mem = next((x for x in recs if x.get('kind') == 'memory'), None)
+            mem_state = '-'
+            if mem:
+                if mem['status'] == 'merged':
+                    rep = mem.get('report', {})
+                    mem_state = f"+{len(rep.get('merged', []))} 跳过 {len(rep.get('skipped', []))}"
+                else:
+                    mem_state = '共用目录，未搬'
+            results.append({'session_id': sid, 'title': r['title'], 'from': cur,
+                            'to': want_dir, 'status': 'ok', 'files_moved': moved,
+                            'memory': mem_state})
+            out(f"[OK] {sid[:8]}  文件 {moved}｜记忆 {mem_state}")
+        except Exception as ex:
+            if recs:
+                undo_files(recs)
+            results.append({'session_id': sid, 'status': 'failed', 'error': str(ex)})
+            out(f'[FAIL] {sid[:8]}  {ex}')
+
+    batch = write_batch_manifest(base, results, note='repair')
+    ok_n = sum(1 for x in results if x['status'] == 'ok')
+    out('')
+    out(f'完成：修复 {ok_n}，失败 {len(results) - ok_n}')
+    out(f'备份与清单: {base}')
+    if args.json:
+        print(json.dumps({'backup': base, 'results': results}, ensure_ascii=False, indent=2))
+    return 0 if ok_n == len(results) else 1
+
 
 def cmd_workspace(args, con, db_path):
     sub = args.ws_cmd
@@ -1695,7 +1832,9 @@ def build_parser():
     common.add_argument('--qoder-home', default=argparse.SUPPRESS,
                         help='Qoder 数据根目录（默认 ~/.qoder）')
 
-    sub.add_parser('doctor', parents=[common], help='体检：库/表/进程/路径/影子/备份')
+    dp = sub.add_parser('doctor', parents=[common], help='体检：库/表/进程/路径/影子/备份')
+    dp.add_argument('--deep', action='store_true',
+                    help='加查会话文件、目录一致性、项目记忆、产出索引')
 
     lp = sub.add_parser('list', parents=[common], help='列出会话')
     lp.add_argument('--workspace', help='按工作区名/路径/UUID 过滤')
@@ -1761,6 +1900,14 @@ def build_parser():
     bp = sub.add_parser('backup', parents=[common], help='备份')
     bp.add_argument('--list', action='store_true', help='列出备份')
 
+    rpp = sub.add_parser('repair', parents=[common],
+                         help='补齐历史只改库未搬文件的会话（按当前 cwd 归位文件/记忆/产出）')
+    rpp.add_argument('--ids', help='逗号分隔的会话 ID 前缀')
+    rpp.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true')
+    rpp.add_argument('--memory-mode', choices=['auto', 'always'], default=None,
+                     dest='memory_mode',
+                     help='默认按源目录判断；always=总是合并，auto=共用目录不搬')
+
     rb = sub.add_parser('rollback', parents=[common], help='从备份恢复（整库 / 单条 / 整批）')
     rb.add_argument('--backup', help='整库快照文件（main.sqlite.bak-*）')
     rb.add_argument('--manifest', help='单条清单（qoder-cm-backups/**/items/*.json）')
@@ -1794,6 +1941,8 @@ def main(argv=None):
             return cmd_list(args, con, db_path)
         if args.cmd == 'rename':
             return cmd_rename(args, con, db_path)
+        if args.cmd == 'repair':
+            return cmd_repair(args, con, db_path)
         if args.cmd == 'move':
             return cmd_move(args, con, db_path)
         if args.cmd == 'workspace':

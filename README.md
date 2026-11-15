@@ -25,12 +25,13 @@ Qoder 自带的会话命名只取「首条用户消息 + 首条助手回复」�
 
 | 命令 | 用途 | 写库 |
 |---|---|---|
-| `doctor` | 七项体检：数据库、WAL、表结构、Qoder 进程、工作区路径、影子会话、备份 | 否 |
+| `doctor` | 七项体检；`--deep` 加查会话文件、目录一致性、项目记忆、产出索引 | 否 |
 | `list` | 六维筛选会话 | 否 |
 | `rename --export` | 导出完整对话历史，供 agent 生成标题 | 否 |
 | `rename --import` | 写回标题并锁定来源标记 | 是 |
 | `move` | 迁移会话：归属 + 会话文件 + 项目记忆 + 产出（`--metadata-only` 只改库） | 是 |
 | `workspace` | `list` / `new` / `rename` / `retarget` / `archive` / `unarchive` / `delete` | 部分 |
+| `repair` | 补齐历史只改库未搬文件的会话 | 文件 |
 | `backup` / `rollback` | 整库快照与恢复 | 是 |
 
 **不做**：不删会话（只做工作区级联软删除）、不改对话正文、不操作另一台设备的影子会话、不动全局记忆 `~/.qoder/memory/`。

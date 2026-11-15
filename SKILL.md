@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.2.0
+version: 1.2.1
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -25,6 +25,7 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 | `rename --export` | 导出完整对话历史，供 agent 生成标题 | 否 |
 | `rename --import` | 把 titles.json 写回，并锁定标题来源 | 是 |
 | `move` | 迁移会话：改归属 + 搬会话文件、项目记忆、产出（`--metadata-only` 只改库） | 是 |
+| `repair` | 补齐历史「只改库没搬文件」的会话：按当前 cwd 把文件/记忆/产出归位 | 文件 |
 | `workspace` | list / new / rename / retarget / archive / unarchive / delete | 部分 |
 | `backup` / `rollback` | 整库快照与恢复 | 是 |
 
@@ -157,6 +158,24 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 
 落盘时**每条会话一个独立事务**：某条失败只标记 `[FAIL]`，其余继续。写完逐条回读三处字段并打 `[OK]` / `[WARN]`，最后输出成功/失败计数与备份组路径。
 
+### repair
+
+修历史欠账：早先用旧版本（或 `--metadata-only`）迁过的会话，数据库归属改了，但 `projects/<cwd编码>/` 下的正文、子目录、项目记忆还留在旧目录。`repair` 只搬文件、不改数据库：
+
+```bash
+python <skill>/scripts/qoder_sessions.py repair                 # 干跑：列出待修清单
+python <skill>/scripts/qoder_sessions.py repair --ids e3d0af7b  # 只修指定会话
+python <skill>/scripts/qoder_sessions.py repair --apply         # 落盘
+```
+
+记忆策略（默认按源目录判断）：
+
+- 源目录只剩这一条会话 → 视为独享，把它的 `memory/` 合并进目标项目；
+- 源目录还有别的会话 → 该记忆属于留下的项目，**不搬**，避免把共用记忆复制到别的项目；
+- `--memory-mode always` 强制总是合并（慎用，会产生重复记忆）。
+
+判断依据是「处理前的目录会话数」，不是逐条实时计算，所以同一目录的多条会话不会因为处理顺序不同而结果不一致。
+
 ### workspace
 
 ```bash
@@ -249,6 +268,8 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 | 迁移后新项目读不到旧记忆 | 只用了 `--metadata-only`，记忆没搬 | 去掉该参数重跑，或手工合并 `projects/*/memory/` |
 | 产出旧路径打不开 | 硬链接与复制都失败（如跨盘且无权限） | 看清单里的 `link` 字段，手工补链接或复制 |
 | `--qoder-home` 指错 | 沙箱演练时未指向副本 | 确认指向含 `projects/` 的根目录 |
+| 迁完发现目录还在旧位置 | 早先只改了数据库 | 跑 `repair`（先干跑看清单） |
+| `repair` 说「共用目录，未搬」 | 源项目还有其他会话 | 正常；该记忆属于原项目，需要时手工合并 |
 | 改完标题又变回去 | 只改了 `title`，没锁 `titleSource` | 用本技能 `rename --import`（会自动锁定） |
 | `未找到 Qoder 数据库` | 非默认安装位置 | `--db` 指定 `main.sqlite` |
 | 迁移后执行目录不对 | `execution_target_json` 未同步 | 本技能会三处同改；手工改库容易漏 |
