@@ -1,12 +1,12 @@
 ---
 name: qoder-conversation-manager
-description: 管理本机 Qoder 的会话与工作区：列出与筛选会话、按完整对话历史重命名、把会话迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。当用户说「重命名 Qoder 会话、给对话改标题、整理会话名称、移动对话、换工作区、改归属、把对话放到某个工作区、新建空间/工作区、改工作区路径、删除工作区、列出 Qoder 会话、Qoder 体检」时使用。只操作 Qoder 本地数据（Windows），不操作 WorkBuddy 数据。
-description_zh: 管理 Qoder 本地会话与工作区：按完整对话历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。默认干跑，写入前自动备份，拒绝影子会话。
-description_en: Manage local Qoder sessions and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
+description: 管理本机 Qoder 的会话与工作区：列出与筛选会话、按完整对话历史重命名、把会话迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。当用户说「重命名 Qoder 会话、给对话改标题、整理会话名称、移动对话、换工作区、改归属、把对话放到某个工作区、新建空间/工作区、改工作区路径、删除工作区、列出 Qoder 会话、Qoder 体检」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
+description_zh: 管理 Qoder 桌面端本地会话与工作区：按完整对话历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。默认干跑，按对象备份，拒绝影子会话。
+description_en: Manage Qoder desktop sessions and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.1.0
+version: 1.1.1
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -28,7 +28,7 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 | `workspace` | list / new / rename / retarget / archive / unarchive / delete | 部分 |
 | `backup` / `rollback` | 整库快照与恢复 | 是 |
 
-**不做什么**：不删会话（只做工作区级联软删除）、不改对话正文、不碰 WorkBuddy 数据、不操作另一台设备的影子会话。
+**不做什么**：不删会话（只做工作区级联软删除）、不改对话正文、不操作另一台设备的影子会话。
 
 ## 核心事实（改库前必须知道）
 
@@ -42,13 +42,14 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 
 ## 安装
 
-技能目录（用户级，所有项目可用）：
+把整个目录放进宿主 agent 的用户级技能目录即可。目录约定由宿主决定，例如：
 
 ```
-C:\Users\<用户>\.workbuddy\skills\qoder-conversation-manager\
+~/.qoder/skills/qoder-conversation-manager/
+~/.codex/skills/qoder-conversation-manager/
 ```
 
-也可以整目录复制到 `~/.qoder/skills/` 或 `~/.codex/skills/`，三端 SKILL.md 格式一致。详见 `references/install.md`。
+各宿主对 SKILL.md 的解析规则一致，同一份目录可直接复用；具体路径以宿主自己的设置页为准。详见 `references/install.md`。
 
 验证：
 
@@ -56,13 +57,13 @@ C:\Users\<用户>\.workbuddy\skills\qoder-conversation-manager\
 python <skill-dir>/scripts/qoder_sessions.py doctor
 ```
 
-七项全 `OK` 说明可用；`Qoder 进程` 一项在应用运行时会是 `!!`，属正常。
+七项全 `OK` 说明可用。`Qoder 进程` 只是提示项——运行中也允许热写。
 
 ## 命令总览
 
 所有命令都支持 `--db <path>`（指向副本做演练）、`--json`（结构化输出）。
 
-写操作默认**允许 Qoder 运行中热写**（与 WorkBuddy 侧技能一致）：写完提示重启应用，让侧栏按数据库重建。需要硬性拦截时加 `--require-closed`（退出码 3）。
+写操作默认**允许 Qoder 运行中热写**：写完提示重启应用，让侧栏按数据库重建。需要硬性拦截时加 `--require-closed`（退出码 3）。
 
 ### doctor
 

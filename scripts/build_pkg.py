@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """打包成两个市场上架用的 zip。
 
-- WorkBuddy：zip 根目录直接是 SKILL.md
-- Qoder：单层目录 qoder-conversation-manager/，内含 SKILL.md
+- -root：zip 根目录直接是 SKILL.md（部分市场要求此形态）
+- -dir：单层目录 qoder-conversation-manager/，内含 SKILL.md（另一些市场要求此形态）
 
 用法：python scripts/build_pkg.py [--out dist]
 """
@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = 'qoder-conversation-manager'
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 
 FILES = ['SKILL.md', 'README.md', 'CHANGELOG.md', 'LICENSE', 'PUBLISHING.md']
 DIRS = ['scripts', 'references', 'examples']
@@ -40,7 +40,7 @@ def collect():
 
 def build(out_dir, prefix):
     items = collect()
-    path = os.path.join(out_dir, f'{NAME}-{("workbuddy" if not prefix else "qoder")}-{VERSION}.zip')
+    path = os.path.join(out_dir, f'{NAME}-{"root" if not prefix else "dir"}-{VERSION}.zip')
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
         for p, rel in items:
             z.write(p, f'{prefix}{rel}' if prefix else rel)

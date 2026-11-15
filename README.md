@@ -33,7 +33,7 @@ Qoder 自带的会话命名只取「首条用户消息 + 首条助手回复」�
 | `workspace` | `list` / `new` / `rename` / `retarget` / `archive` / `unarchive` / `delete` | 部分 |
 | `backup` / `rollback` | 整库快照与恢复 | 是 |
 
-**不做**：不删会话（只做工作区级联软删除）、不改对话正文、不操作另一台设备的影子会话、不碰 WorkBuddy 数据。
+**不做**：不删会话（只做工作区级联软删除）、不改对话正文、不操作另一台设备的影子会话。
 
 ## 快速开始
 
@@ -94,19 +94,14 @@ python scripts/qoder_sessions.py rollback --backup <main.sqlite.bak-...> --yes -
 - **删除只做软删除**（进 Qoder 回收站），且必须 `--yes`。
 - **副本演练**：`--db` 指向数据库副本时，不要求 Qoder 退出，可完整跑 rename / move / rollback。
 
-## 安装到 AI Agent
+## 安装到宿主 agent
 
-技能是纯目录 + Python 标准库脚本，不需要 `pip install`。同一份目录可复制给 WorkBuddy、Qoder、Codex 使用。
+技能是纯目录 + Python 标准库脚本，不需要 `pip install`。把整个目录放进宿主的用户级技能目录即可，宿主之间可共用同一份目录。
 
 ```bash
-# WorkBuddy
-cp -r qoder-conversation-manager "$HOME/.workbuddy/skills/"
-
-# Qoder
+# 以 Qoder 与 Codex 为例，路径以宿主设置为准
 cp -r qoder-conversation-manager "$HOME/.qoder/skills/"
-
-# Codex
-mkdir -p "$HOME/.codex/skills" && cp -r qoder-conversation-manager "$HOME/.codex/skills/"
+cp -r qoder-conversation-manager "$HOME/.codex/skills/"
 ```
 
 详见 [`references/install.md`](references/install.md)。

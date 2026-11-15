@@ -18,7 +18,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -844,7 +844,7 @@ def rename_apply(args, con, db_path):
             continue
         plan.append((row['session_id'], row['title'], title))
 
-    # 允许不同会话重名，与 WorkBuddy 侧技能保持一致，不再去重告警
+    # 允许不同会话重名，不做去重告警
 
     if args.json:
         print(json.dumps({'plan': [{'sid': s, 'old': o, 'new': n} for s, o, n in plan],

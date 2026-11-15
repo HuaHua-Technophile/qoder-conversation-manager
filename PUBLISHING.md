@@ -6,7 +6,7 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，含 v1.0.0 Release 与两个安装包 |
+| GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，含 v1.1.x Release 与两个安装包 |
 | skills.sh（Vercel Labs Agent Skills Directory） | ✅ 已收录 | 通过 `npx skills add` 安装即进入索引；已安装到 `~/.agents/skills/`，榜单检索有延迟 |
 | WorkBuddy 开放平台 | ⏳ 待提交 | 安装包已就绪，需开发者认证后在后台上传 |
 | Qoder 技能市场 | ⏳ 待提交 | 安装包已就绪，需在 Qoder 内提交（机审，通常几分钟） |
@@ -30,7 +30,7 @@ git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
 
 **技能名（英文）**：Qoder Conversation Manager
 **技能名（中文）**：Qoder会话管理
-**版本**：1.0.0
+**版本**：1.1.1
 **分类**：开发工具 / 效率工具 / 数据管理
 **许可证**：MIT
 
@@ -56,7 +56,7 @@ git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
 ### 1. WorkBuddy 开放平台
 
 1. 打开 <https://open.workbuddy.cn>，完成开发者认证（个人：身份证 + 人脸）。
-2. 进入「发布管理 → 技能 → 创建」，上传 `qoder-conversation-manager-workbuddy-1.0.0.zip`。
+2. 进入「发布管理 → 技能 → 创建」，上传 `qoder-conversation-manager-root-1.1.1.zip`。
    - 包内根目录直接是 `SKILL.md`，符合平台要求；体积 34 KB，远低于 3 MB 上限。
 3. 补充头像（512×512，≤500KB）、分类、使用说明。
 4. 提交审核（官方口径 7 个工作日，实测常当天出结果）。
@@ -65,7 +65,7 @@ git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
 ### 2. Qoder 技能市场
 
 1. 在 Qoder 内打开技能市场 → 上传自有 Skill。
-2. 使用 `qoder-conversation-manager-qoder-1.0.0.zip`（单层同名目录 + SKILL.md）。
+2. 使用 `qoder-conversation-manager-dir-1.1.1.zip`（单层同名目录 + SKILL.md）。
 3. 审核以机审为主，通常几分钟出结果。
 4. 参考文档：<https://docs.qoder.com/zh/qoderwork/skill-marketplace-guidelines>
 
@@ -80,7 +80,7 @@ git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
 ### 4. Skill Vault
 
 1. 打开 <https://skillvault.md>，用 GitHub / Google / 邮箱登录。
-2. 上传 `SKILL.md`，填写工具兼容性标签（WorkBuddy / Qoder / Codex）。
+2. 上传 `SKILL.md`，填写兼容的宿主标签。
 
 ## 打包
 
@@ -90,8 +90,8 @@ python build_pkg.py
 
 生成两个包：
 
-- `dist/qoder-conversation-manager-workbuddy-1.0.0.zip`：根目录直接含 `SKILL.md`
-- `dist/qoder-conversation-manager-qoder-1.0.0.zip`：单层目录 `qoder-conversation-manager/`
+- `dist/qoder-conversation-manager-root-1.1.1.zip`：根目录直接含 `SKILL.md`
+- `dist/qoder-conversation-manager-dir-1.1.1.zip`：单层目录 `qoder-conversation-manager/`
 
 ## 版本发布流程
 
