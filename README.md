@@ -64,7 +64,7 @@ flowchart LR
 - **可挂定时任务**：`rename --export --pending` 只导出「标题未定稿」和「上次判断后又被对话过」的任务。判定基准是每条任务的上次改名时间，不是"今天零点"——一个月前改过名、今天又聊起来，照样会被重新判断。标题仍合适时走 `[SAME]` 只刷新判断时间，不会来回抖动。
 - **自动分片**：按字数做 LPT 均衡分片，大批量任务可交给多个子智能体并行处理。
 - **真迁移**：`move` 默认搬会话 JSONL、同名子目录、该任务写入的项目记忆与产出；旧路径留硬链接，历史链接不断。
-- **七项体检**：数据库、WAL、表结构、进程、工作区路径、影子任务、备份；`--deep` 再加查会话文件、目录一致性、项目记忆、产出索引。
+- **体检**：七项基础（数据库、WAL、表结构、进程、工作区路径、影子任务、备份）+ `--deep` 五项（会话文件、目录一致性、项目记忆、产出索引、孤立项目目录）。
 - **安全兜底**：每条任务独立事务，失败只影响它自己；目标文件重名先备份；搬空的源目录自动清理。
 - **可演练**：`--db` 指向数据库副本时，不要求 Qoder 退出，可完整跑 rename / move / rollback。
 
@@ -123,7 +123,7 @@ python scripts/qoder_sessions.py rename --import titles.json --apply
 ]
 ```
 
-`sid` 支持完整 UUID 或前 8 位；`new_title` 可不带前缀，`category` 会自动补成 `[分类] 标题`。标题默认长度 **20–30 字**，可用 `--min-title-len` / `--max-title-len` 调整。
+`sid` 支持完整 UUID 或前 8 位；`new_title` 可不带前缀，`category` 会自动补成 `[分类] 标题`。标题默认长度 **12–30 字符**（正文 8–22 汉字 + 前缀与空格），可用 `--min-title-len` / `--max-title-len` 调整。
 
 ## 挂定时任务（增量重命名）
 
@@ -178,7 +178,7 @@ python scripts/qoder_sessions.py rollback --backup ./qoder-cm-backups/db/<快照
 
 | 命令 | 用途 | 写库 |
 |---|---|---|
-| `doctor` | 七项体检；`--deep` 加查会话文件、目录一致性、项目记忆、产出索引 | 否 |
+| `doctor` | 七项基础体检；`--deep` 再加五项（会话文件、目录一致性、项目记忆、产出索引、孤立目录） | 否 |
 | `list` | 六维筛选：关键词 / 工作区 / cwd / 时间 / 标题来源 / 影子 | 否 |
 | `rename --export` | 导出完整历史，按字数 LPT 自动分片；`--pending` 只导增量候选，适合定时任务 | 否 |
 | `rename --import` | 写回标题并锁定来源标记；默认干跑，`--apply` 落盘 | 是 |
@@ -236,7 +236,7 @@ git push origin vX.Y.Z     # GitHub Release + SkillHub 自动完成
 - 仅支持 **Windows**（路径探测按 Windows 实现）。
 - 不支持操作另一台设备的 Qoder 数据；影子任务会被拒绝。
 - 不改任务正文，不重建 FTS 索引（标题不在索引内，无需重建）。
-- 本地工作区的 `execution_target_json.workspace.id` 是 `ws_<64位哈希>`，算法不可复现；技能采用「复用目标工作区已有值，新工作区退回 UUID」的策略。
+- 本地工作区的 `execution_target_json.workspace.id` 实测可能是 `ws_<64位哈希>`，也可能等于工作区 UUID（UNC 路径工作区就是 UUID）；算法不可复现，技能采用「复用目标工作区已有值，新工作区退回 UUID」的策略。
 
 ## 发布
 

@@ -8,6 +8,7 @@
 import argparse
 import glob
 import filecmp
+import hashlib
 import json
 import os
 import re
@@ -16,10 +17,11 @@ import sqlite3
 import subprocess
 import sys
 import time
+import unicodedata
 import uuid
 from datetime import datetime, timedelta
 
-VERSION = '1.6.0'
+VERSION = '1.7.0'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -61,12 +63,41 @@ def fmt_ms(ms):
         return str(ms)
 
 
+JSON_MODE = False   # --json：人类可读输出全部静音，整条命令只在最后打一份 JSON
+WARNINGS = []       # JSON_MODE 下的 [WARN]/[NOTE] 收集到这里，随结果一起输出
+
+
 def out(msg=''):
+    """人类可读输出。JSON_MODE 下静音，保证 stdout 只有一个 JSON 文档。"""
+    if JSON_MODE:
+        return
     print(msg)
 
 
+def warn(msg, tag='WARN'):
+    """告警。人类可读时直出；JSON_MODE 下只收集，避免污染 stdout。"""
+    WARNINGS.append(msg)
+    if not JSON_MODE:
+        print(f'[{tag}] {msg}')
+
+
+def emit_json(payload):
+    """JSON 模式的唯一出口：整份结果只打一次。
+
+    字典结果自行带 warnings 字段；数组结果（如 list）把告警打到 stderr，
+    以保持「数组」这个形状不变。
+    """
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if not isinstance(payload, dict):
+        for w in WARNINGS:
+            print(f'[WARN] {w}', file=sys.stderr)
+
+
 def die(msg, code=2):
+    """致命错误。JSON_MODE 下 stdout 也给一份合法 JSON，自动化不会拿到半截输出。"""
     print(f'[ERROR] {msg}', file=sys.stderr)
+    if JSON_MODE:
+        print(json.dumps({'error': msg, 'exit': code}, ensure_ascii=False))
     sys.exit(code)
 
 
@@ -77,6 +108,22 @@ def connect(db_path, write=False):
         con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=8)
     con.row_factory = sqlite3.Row
     return con
+
+
+def is_custom_db(db_arg, default_path):
+    """--db 是否指向非默认库（副本）。
+
+    `CUSTOM_DB` 在 v1.7.0 起是安全闸门（整库覆盖硬拦 / gate_running / post_write_hint
+    三处都看它），所以不能简单比字符串：
+    - 先 `realpath` 解开 junction / 符号链接 / `\\\\?\\` 前缀，否则 `--db` 走 junction
+      指向同一个库也能绕过硬拦；
+    - 再 `normcase` 抹平大小写与分隔符（Windows 路径大小写不敏感）。
+    不存在的路径 realpath 原样返回，不影响「副本」判定。
+    """
+    if not db_arg or not default_path:
+        return bool(db_arg) and not default_path
+    return (os.path.normcase(os.path.realpath(db_arg))
+            != os.path.normcase(os.path.realpath(default_path)))
 
 
 def qoder_running():
@@ -108,7 +155,7 @@ def gate_running(require_closed_flag=False):
     if require_closed_flag:
         die(f'检测到 {n} 个 Qoder 进程在运行，且指定了 --require-closed。'
             f'请完全退出 Qoder 后重试。', 3)
-    out(f'[WARN] Qoder 正在运行（{n} 个进程）。按热写继续；完成后请重启 Qoder 验证。')
+    warn(f'Qoder 正在运行（{n} 个进程）。按热写继续；完成后请重启 Qoder 验证。')
 
 
 def post_write_hint(what='写入'):
@@ -274,9 +321,28 @@ class FilterError(Exception):
 
 
 def parse_filter(expr):
-    """解析形如 `cwd like %NAS% and title contains 工具包` 的安全子集。"""
+    """解析形如 `cwd like %NAS% and title contains 工具包` 的安全子集。
+
+    只支持 `and` 连接 + contains/like/startswith/endswith/=/!=。
+    其它语法（or / 括号 / not / 比较运算）一律显式报错——
+    静默当字面值处理会让用户以为「真的没有匹配的任务」。
+    """
     if not expr:
         return []
+    bad = []
+    if re.search(r'\s+or\s+', expr, flags=re.I):
+        bad.append('or')
+    if '(' in expr or ')' in expr:
+        bad.append('括号')
+    if re.search(r'\bnot\b', expr, flags=re.I):
+        bad.append('not')
+    if re.search(r'[<>]=?', expr):
+        bad.append('比较运算')
+    if bad:
+        raise FilterError(
+            f'不支持的语法: {"、".join(bad)}。'
+            f'只支持 and 连接与 contains/like/startswith/endswith/=/!=，'
+            f'不支持 or、括号、not 与比较运算（不是 SQL）。')
     parts = re.split(r'\s+and\s+', expr, flags=re.I)
     conds = []
     for p in parts:
@@ -470,10 +536,30 @@ def write_batch_manifest(base, items, note='', extra=None):
     return path
 
 
+# 回滚清单只允许这两张表，且主键列必须与表匹配。
+# restore_row() 要把表名/主键名拼进 SQL（标识符无法用占位符），
+# 不校验就等于让清单文件直接执行任意 SQL。
+KEY_COLUMNS = {'chat_sessions': 'session_id', 'workspaces': 'workspace_id'}
+
+
 def restore_row(w, payload):
-    """按 manifest 里的一行恢复；只写回存在的列。"""
-    table = payload['table']
-    key_col = payload['key_column']
+    """按 manifest 里的一行恢复；只写回存在的列。
+
+    `op == "insert"` 表示这行是本次操作**新建**的（如 move --create 建的工作区），
+    回滚时反向删除，否则会残留成孤儿行。
+    表名与主键列先过白名单：清单是外部文件，不能信。
+    """
+    table = payload.get('table')
+    key_col = payload.get('key_column')
+    expected = KEY_COLUMNS.get(table)
+    if not expected or key_col != expected:
+        die(f'备份清单不合法：table={table!r} key_column={key_col!r}', 2)
+    if payload.get('op') == 'insert':
+        try:
+            cur = w.execute(f'delete from {table} where {key_col}=?', (payload['key_value'],))
+        except sqlite3.Error:
+            return 0
+        return cur.rowcount
     row = payload['row']
     have = set(table_columns(w, table))
     cols = [c for c in row if c != key_col and c in have]
@@ -544,11 +630,20 @@ def cmd_doctor(args, con, db_path):
     except sqlite3.Error as ex:
         add('影子任务', False, str(ex))
 
-    # 7 备份
+    # 7 备份（超过 14 天，或库里有数据却从未备份，都要标 !!）
     bks = list_backups(db_path)
+    try:
+        has_data = con.execute('select count(*) from chat_sessions').fetchone()[0] > 0
+    except sqlite3.Error:
+        has_data = False
     if bks:
         age_h = (time.time() - os.path.getmtime(bks[0])) / 3600
-        add('备份', True, f'{work_root()}｜{len(bks)} 份，最近 {os.path.basename(bks[0])}（{age_h:.1f} 小时前）')
+        stale = age_h > 14 * 24
+        add('备份', not stale,
+            f'{work_root()}｜{len(bks)} 份，最近 {os.path.basename(bks[0])}（{age_h:.1f} 小时前）'
+            + ('；已超 14 天，建议跑一次 backup' if stale else ''))
+    elif has_data:
+        add('备份', True, f'{work_root()}｜尚无备份，首次写入会自动创建；建议先跑一次 backup')
     else:
         add('备份', True, f'{work_root()}｜尚无备份，首次写入会自动创建')
 
@@ -584,11 +679,21 @@ def cmd_doctor(args, con, db_path):
                 if mem_dirs else '尚无项目记忆')
             n_out = con.execute('select count(distinct session_id) from turn_file_change_sets').fetchone()[0]
             add('产出索引', True, f'{n_out} 条任务有产出记录')
+            orphans = []
+            if os.path.isdir(proot):
+                for name in sorted(os.listdir(proot)):
+                    d = os.path.join(proot, name)
+                    if os.path.isdir(d) and project_sessions(d) == 0:
+                        orphans.append(name)
+            add('孤立项目目录', not orphans,
+                '无空项目目录' if not orphans
+                else f'{len(orphans)} 个空项目目录（无 jsonl，可手工删除）：'
+                     + ', '.join(orphans[:3]) + ('…' if len(orphans) > 3 else ''))
         except Exception as ex:
             add('深度检查', False, str(ex))
 
     if args.json:
-        print(json.dumps({'db': db_path, 'version': VERSION, 'checks': results}, ensure_ascii=False, indent=2))
+        emit_json({'db': db_path, 'version': VERSION, 'checks': results})
         return 0 if all(r['ok'] for r in results) else 1
 
     out(f'Qoder 数据库: {db_path}')
@@ -607,37 +712,56 @@ def cmd_doctor(args, con, db_path):
 def cmd_list(args, con, db_path):
     ws_map = {w['workspace_id']: w['name'] for w in load_workspaces(con, include_deleted=True)}
     stats = message_stats(con)
-    rows = session_rows(con, include_deleted=args.include_deleted, include_peer=args.include_peer)
 
-    if args.workspace:
-        ws, cands = find_workspace(con, args.workspace, include_deleted=True)
-        if not ws:
-            if cands:
-                die('工作区名不唯一，请用 --workspace 指定其中之一的 UUID：\n' +
-                    '\n'.join(f"  {w['workspace_id']}  {w['name']}  {primary_root(w)}" for w in cands))
-            die(f'未找到工作区: {args.workspace}')
-        rows = [r for r in rows if r['workspace_id'] == ws['workspace_id']]
+    def scope(rows):
+        """六道筛子（不含 `--limit`），显示路与影子计数路共用同一份逻辑。
 
-    for r in rows:
-        r['_ws_name'] = ws_map.get(r['workspace_id'], '') or ''
+        顺序不能改：`_ws_name` 在 workspace 段之后赋值，`--filter` 里的
+        `workspace contains …` 依赖这个隐式前提。
+        """
+        if args.workspace:
+            ws, cands = find_workspace(con, args.workspace, include_deleted=True)
+            if not ws:
+                if cands:
+                    die('工作区名不唯一，请用 --workspace 指定其中之一的 UUID：\n' +
+                        '\n'.join(f"  {w['workspace_id']}  {w['name']}  {primary_root(w)}" for w in cands))
+                die(f'未找到工作区: {args.workspace}')
+            rows = [r for r in rows if r['workspace_id'] == ws['workspace_id']]
 
-    if args.filter:
-        try:
-            rows = apply_filter(rows, parse_filter(args.filter))
-        except FilterError as ex:
-            die(str(ex))
+        for r in rows:
+            r['_ws_name'] = ws_map.get(r['workspace_id'], '') or ''
 
-    if args.cwd:
-        rows = [r for r in rows if args.cwd.lower() in (r['cwd'] or '').lower()]
-    if args.keyword:
-        kw = args.keyword.lower()
-        rows = [r for r in rows if kw in (r['title'] or '').lower()]
-    if args.since:
-        try:
-            cutoff = int(datetime.strptime(args.since, '%Y-%m-%d').timestamp() * 1000)
-        except ValueError:
-            die('--since 需要 YYYY-MM-DD 格式')
-        rows = [r for r in rows if (r['updated_at'] or 0) >= cutoff]
+        if args.filter:
+            try:
+                rows = apply_filter(rows, parse_filter(args.filter))
+            except FilterError as ex:
+                die(str(ex))
+
+        if args.cwd:
+            rows = [r for r in rows if args.cwd.lower() in (r['cwd'] or '').lower()]
+        if args.keyword:
+            kw = args.keyword.lower()
+            rows = [r for r in rows if kw in (r['title'] or '').lower()]
+        if args.since:
+            try:
+                cutoff = int(datetime.strptime(args.since, '%Y-%m-%d').timestamp() * 1000)
+            except ValueError:
+                die('--since 需要 YYYY-MM-DD 格式')
+            rows = [r for r in rows if (r['updated_at'] or 0) >= cutoff]
+        return rows
+
+    rows = scope(session_rows(con, include_deleted=args.include_deleted,
+                              include_peer=args.include_peer))
+
+    # 影子任务默认隐藏，但必须告诉用户「同一筛选范围内有多少条没显示」。
+    # 口径 = 若再加 --include-peer 会多出来的行数；必须在 --limit 之前算，
+    # 且不能用「全库总数 − 当前结果数」（那会把被关键词/limit 筛掉的本地任务也算成影子）。
+    peer_hidden = 0
+    if not args.include_peer:
+        peer_hidden = sum(1 for r in scope(session_rows(con, include_deleted=args.include_deleted,
+                                                       include_peer=True)) if r['_peer'])
+    hint = f'另有 {peer_hidden} 条影子任务未显示，加 --include-peer 查看' if peer_hidden else ''
+
     if args.limit:
         rows = rows[:args.limit]
 
@@ -648,11 +772,15 @@ def cmd_list(args, con, db_path):
                     'peer': r['_peer'], 'updated_at': r['updated_at'],
                     'messages': stats.get(r['session_id'], (0, 0))[0]}
                    for r in rows]
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
+        if hint:
+            print(f'[NOTE] {hint}', file=sys.stderr)
         return 0
 
     if not rows:
         out('没有匹配的任务')
+        if hint:
+            out(f'（{hint}）')
         return 0
     out(f'共 {len(rows)} 条')
     out('')
@@ -665,6 +793,9 @@ def cmd_list(args, con, db_path):
         wsname = r['_ws_name'] or '无工作区'
         out(f"{r['session_id'][:8]:<10} {stats.get(r['session_id'], (0, 0))[0]:>4} "
             f"{flag:<6} {wsname[:20]:<20} {(r['title'] or '')[:44]}")
+    if hint:
+        out('')
+        out(f'（{hint}）')
     return 0
 
 
@@ -673,7 +804,12 @@ def cmd_list(args, con, db_path):
 FORBIDDEN = set('"“”\'‘’《》<>。？?！!\n\r\t/\\|')
 
 
-def validate_title(t, min_len=20, max_len=30, require_prefix=False):
+def validate_title(t, min_len=12, max_len=30, require_prefix=False):
+    """标题校验。默认 12–30 字符（含 `[分类] ` 前缀与空格）。
+
+    文档规则是「正文 8–22 个汉字 + `[分类] ` 前缀」，合计约 12–30 字符，
+    默认值必须与文档对齐，否则自带示例都会被拒。
+    """
     t = (t or '').strip()
     errs = []
     if not t:
@@ -856,7 +992,7 @@ def rename_export(args, con, db_path):
         want = {s.strip() for s in args.ids.split(',') if s.strip()}
         missing = [w for w in want if not any(r['session_id'].startswith(w) for r in rows)]
         if missing:
-            out(f"[WARN] 这些 ID 未匹配到任务：{', '.join(missing)}")
+            warn(f"这些 ID 未匹配到任务：{', '.join(missing)}")
         rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
     for r in rows:
         w = ws_map.get(r['workspace_id'])
@@ -880,8 +1016,12 @@ def rename_export(args, con, db_path):
         rows = rows[:args.limit]
 
     if not rows:
+        if args.json:
+            emit_json({'out_dir': None, 'count': 0, 'items': [], 'shards': [],
+                       'skipped': skip, 'warnings': list(WARNINGS)})
+            return 0
         out('没有匹配的任务')
-        if reasons == {} and skip:
+        if skip and any(skip.values()):
             out('增量筛选：' + '，'.join(f'{k} {v} 条' for k, v in skip.items() if v))
         return 0
 
@@ -927,8 +1067,9 @@ def rename_export(args, con, db_path):
         shard_info = write_shards(outdir, index, max(1, args.shards))
 
     if args.json:
-        print(json.dumps({'out_dir': outdir, 'count': len(index), 'items': index,
-                          'shards': shard_info, 'skipped': skip}, ensure_ascii=False, indent=2))
+        emit_json({'out_dir': outdir, 'count': len(index), 'items': index,
+                   'shards': shard_info, 'skipped': skip,
+                   'warnings': list(WARNINGS)})
         return 0
     out(f'已导出 {len(index)} 个任务的完整历史 -> {outdir}')
     out(f'索引文件: {os.path.join(outdir, "index.json")}')
@@ -966,8 +1107,7 @@ def rename_apply(args, con, db_path):
         die('标题文件应为数组：[{"sid": "...", "new_title": "..."}]')
 
     all_rows = session_rows(con, include_deleted=True, include_peer=True)
-    by_short = {r['session_id'][:8]: r for r in all_rows}
-    full_ids = {r['session_id'] for r in all_rows}
+    by_full = {r['session_id']: r for r in all_rows}
 
     plan, touched, skipped = [], [], []
     for it in data:
@@ -976,15 +1116,20 @@ def rename_apply(args, con, db_path):
             skipped.append(('-', '缺少 sid', ''))
             continue
         if len(sid) >= 36:
-            if sid not in full_ids:
-                skipped.append((sid[:8], '库中不存在', ''))
-                continue
-            row = by_short[sid[:8]]
-        else:
-            row = by_short.get(sid)
+            # 完整 ID 直查 by_full：按前 8 位反查会在前缀撞车时改错任务
+            row = by_full.get(sid)
             if not row:
                 skipped.append((sid[:8], '库中不存在', ''))
                 continue
+        else:
+            cand = [r for r in all_rows if r['session_id'].startswith(sid)]
+            if not cand:
+                skipped.append((sid[:8], '库中不存在', ''))
+                continue
+            if len(cand) > 1:
+                skipped.append((sid[:8], f'ID 前缀不唯一（{len(cand)} 条命中），请给完整 ID', ''))
+                continue
+            row = cand[0]
         if row['_peer']:
             skipped.append((sid[:8], '影子任务（正文在另一台设备），已拒绝', ''))
             continue
@@ -998,7 +1143,7 @@ def rename_apply(args, con, db_path):
             composed = f'[{cat}] {composed}'
         title, errs = validate_title(
             composed,
-            min_len=getattr(args, 'min_title_len', 20),
+            min_len=getattr(args, 'min_title_len', 12),
             max_len=getattr(args, 'max_title_len', 30),
             require_prefix=getattr(args, 'require_prefix', False),
         )
@@ -1022,13 +1167,9 @@ def rename_apply(args, con, db_path):
 
     # 允许不同任务重名，不做去重告警
 
-    if args.json:
-        print(json.dumps({'plan': [{'sid': s, 'old': o, 'new': n} for s, o, n in plan],
-                          'touched': [{'sid': s, 'title': t} for s, t in touched],
-                          'skipped': [{'sid': s, 'reason': r} for s, r, _ in skipped]},
-                         ensure_ascii=False, indent=2))
-        if not args.apply_flag:
-            return 0
+    plan_json = [{'sid': s, 'old': o, 'new': n} for s, o, n in plan]
+    touched_json = [{'sid': s, 'title': t} for s, t in touched]
+    skipped_json = [{'sid': s, 'reason': r} for s, r, _ in skipped]
 
     if not args.json:
         out(f'待写入 {len(plan)} 条，标题不变仅刷新判断时间 {len(touched)} 条，跳过 {len(skipped)} 条')
@@ -1043,6 +1184,11 @@ def rename_apply(args, con, db_path):
                 out(f'  {sid}  {reason}' + (f'  | {t[:30]}' if t else ''))
 
     if not args.apply_flag:
+        if args.json:
+            emit_json({'applied': False, 'plan': plan_json, 'touched': touched_json,
+                       'skipped': skipped_json, 'results': [], 'backup': None,
+                       'warnings': list(WARNINGS)})
+            return 0
         out('')
         out('[DRY-RUN] 未写入。确认后加 --apply 落盘。')
         return 0
@@ -1122,7 +1268,9 @@ def rename_apply(args, con, db_path):
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('标题')
     if args.json:
-        print(json.dumps({'backup': base, 'results': results}, ensure_ascii=False, indent=2))
+        emit_json({'applied': True, 'plan': plan_json, 'touched': touched_json,
+                   'skipped': skipped_json, 'results': results, 'backup': base,
+                   'warnings': list(WARNINGS)})
     return 0 if bad_n == 0 else 1
 
 
@@ -1161,15 +1309,27 @@ def encode_cwd(cwd):
     return re.sub(r'[^A-Za-z0-9._-]', '-', cwd or '')
 
 
-def find_project_dir(sid):
+def find_project_dirs(sid):
+    """返回所有含该任务正文的项目目录（按名字排序，顺序稳定）。"""
     root = projects_root()
-    if not os.path.isdir(root):
-        return None
-    for name in os.listdir(root):
+    if not os.path.isdir(root) or not sid:
+        return []
+    hits = []
+    for name in sorted(os.listdir(root)):
         d = os.path.join(root, name)
         if os.path.isfile(os.path.join(d, f'{sid}.jsonl')) or os.path.isdir(os.path.join(d, sid)):
-            return d
-    return None
+            hits.append(d)
+    return hits
+
+
+def find_project_dir(sid):
+    """命中多个副本时取排序后的第一个（原来取 listdir 里碰巧第一个，顺序不定）。"""
+    hits = find_project_dirs(sid)
+    if not hits:
+        return None
+    if len(hits) > 1:
+        warn(f'{sid[:8]} 有 {len(hits)} 份正文副本，取 {os.path.basename(hits[0])}', 'NOTE')
+    return hits[0]
 
 
 def project_sessions(proj_dir):
@@ -1207,25 +1367,45 @@ def unique_path(p):
     return f'{stem}-{time.strftime("%Y%m%d-%H%M%S")}{ext}'
 
 
-def backup_path(src, base, sid, bucket):
+def backup_path(src, base, sid, bucket, rel=None):
+    """把 src 备份到 `files/<sid8>/<bucket>/`，文件优先保留相对路径。
+
+    只按 basename 落盘时，`out/x/log.txt` 与 `out/y/log.txt` 会撞成同一个
+    `output/log.txt`，后者覆盖前者——原始内容就丢了。所以文件按 rel 建中间
+    目录；拿不到合法 rel 时退回 `basename-<绝对路径 sha1 前 8 位>`。
+    目录（sidecar / memory）仍按 basename 整棵复制。
+    """
     dst_dir = os.path.join(base, 'files', sid[:8], bucket)
-    os.makedirs(dst_dir, exist_ok=True)
-    dst = os.path.join(dst_dir, os.path.basename(src.rstrip('\\/')))
+    src_clean = (src or '').rstrip('\\/')
     if os.path.isdir(src):
+        dst = os.path.join(dst_dir, os.path.basename(src_clean))
+        os.makedirs(dst_dir, exist_ok=True)
         shutil.copytree(src, dst, dirs_exist_ok=True)
-    else:
-        shutil.copy2(src, dst)
+        return dst
+
+    parts = []
+    rel = (rel or '').strip()
+    # 绝对路径与盘相对路径（D:x.txt）都不能进备份目录——join 会把它们变成本身
+    if rel and not os.path.isabs(rel) and not os.path.splitdrive(rel)[0]:
+        parts = [p for p in re.split(r'[\\/]+', rel) if p not in ('', '.', '..')]
+    if not parts:
+        digest = hashlib.sha1(os.path.abspath(src_clean).encode('utf-8', 'ignore')).hexdigest()[:8]
+        stem, ext = os.path.splitext(os.path.basename(src_clean))
+        parts = [f'{stem}-{digest}{ext}']
+    dst = os.path.join(dst_dir, *parts)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copy2(src, dst)
     return dst
 
 
-def move_entry(src, dst, base, sid, bucket, kind):
+def move_entry(src, dst, base, sid, bucket, kind, rel=None):
     """搬一个文件或目录，返回记录（含备份路径）。"""
     rec = {'kind': kind, 'src': src, 'dst': dst, 'status': 'pending'}
     if not os.path.exists(src):
         rec['status'] = 'missing'
         return rec
     try:
-        rec['backup'] = backup_path(src, base, sid, bucket)
+        rec['backup'] = backup_path(src, base, sid, bucket, rel)
     except Exception as ex:
         rec['backup_error'] = str(ex)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -1435,7 +1615,7 @@ def move_files_for_session(con, sid, old_cwd, new_root, base, metadata_only=Fals
         dst = os.path.join(new_root, rel)
         if os.path.normcase(src) == os.path.normcase(dst):
             continue
-        rec = move_entry(src, dst, base, sid, 'output', 'output')
+        rec = move_entry(src, dst, base, sid, 'output', 'output', rel)
         if rec['status'] == 'moved':          # 旧路径留链接，历史引用仍可用
             try:
                 os.link(rec['dst'], rec['src'])
@@ -1497,7 +1677,7 @@ def cmd_move(args, con, db_path):
         ws = {'workspace_id': pending['id'], 'name': name, 'workspace_source': 'local',
               'root_paths_json': json.dumps([path], ensure_ascii=False),
               'product_mode': 'coding'}
-        out(f'[NOTE] 目标工作区不存在，将新建：{name} -> {path}')
+        warn(f'目标工作区不存在，将新建：{name} -> {path}', 'NOTE')
     if not (ws['workspace_source'] or '').startswith('local'):
         die(f'目标工作区是另一台设备的投影（{ws["workspace_source"]}），本机不能作为迁移目标')
     root = primary_root(ws)
@@ -1506,14 +1686,23 @@ def cmd_move(args, con, db_path):
 
     et_id, reused = infer_et_id(con, ws['workspace_id'], root)
     stats = message_stats(con)
-    rows = session_rows(con, include_deleted=False, include_peer=False)
-    rows = [r for r in rows if r['workspace_id'] != ws['workspace_id']] if args.skip_in_target else rows
+    all_rows = session_rows(con, include_deleted=False, include_peer=False)
+    rows = all_rows
+    if args.skip_in_target:
+        rows = [r for r in rows if r['workspace_id'] != ws['workspace_id']]
 
     if args.ids:
         want = [s.strip() for s in args.ids.split(',') if s.strip()]
-        missing = [w for w in want if not any(r['session_id'].startswith(w) for r in rows)]
+        # 「库里根本没有这个 ID」与「已在目标工作区、按默认策略跳过」是两件事，分开报
+        missing = [w for w in want if not any(r['session_id'].startswith(w) for r in all_rows)]
         if missing:
-            out(f"[WARN] 这些 ID 未匹配到任务：{', '.join(missing)}")
+            warn(f"这些 ID 未匹配到任务：{', '.join(missing)}")
+        if args.skip_in_target:
+            in_target = [w for w in want if w not in missing
+                         and not any(r['session_id'].startswith(w) for r in rows)]
+            if in_target:
+                warn(f"已在目标工作区，跳过：{', '.join(in_target)}"
+                     f"（要重跑加 --no-skip-in-target）", 'NOTE')
         rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
     if args.filter:
         try:
@@ -1521,20 +1710,29 @@ def cmd_move(args, con, db_path):
         except FilterError as ex:
             die(str(ex))
 
-    plan = [r for r in rows if r['workspace_id'] != ws['workspace_id']]
+    # 默认跳过已在目标工作区的任务；--no-skip-in-target 时连它们一起重跑（例如只补搬文件）
+    if args.skip_in_target:
+        plan = [r for r in rows if r['workspace_id'] != ws['workspace_id']]
+    else:
+        plan = list(rows)
+
+    def move_payload(applied, results, backup, removed_dirs):
+        """move 的 JSON 契约：单文档，空结果也合法。"""
+        return {'target': {'id': ws['workspace_id'], 'name': ws['name'], 'root': root,
+                           'et_id': et_id, 'et_id_reused': reused},
+                'plan': [{'sid': r['session_id'], 'title': r['title'], 'from': r['cwd']}
+                         for r in plan],
+                'applied': applied, 'results': results, 'backup': backup,
+                'removed_dirs': removed_dirs, 'warnings': list(WARNINGS)}
 
     if not plan:
+        if args.json:
+            emit_json(move_payload(False, [], None, []))
+            return 0
         out('没有需要迁移的任务')
         return 0
 
-    if args.json:
-        print(json.dumps({'target': {'id': ws['workspace_id'], 'name': ws['name'], 'root': root,
-                                     'et_id': et_id, 'et_id_reused': reused},
-                          'plan': [{'sid': r['session_id'], 'title': r['title'], 'from': r['cwd']} for r in plan],
-                          'applied': bool(args.apply_flag)}, ensure_ascii=False, indent=2))
-        if not args.apply_flag:
-            return 0
-    else:
+    if not args.json:
         out(f"目标: {ws['name']}  ({root})")
         out(f"执行标识: {et_id}" + ('（复用该工作区已有值）' if reused else '（新工作区，使用 UUID）'))
         out('')
@@ -1544,14 +1742,25 @@ def cmd_move(args, con, db_path):
             out(f"      {r['cwd']}  ->  {root}")
 
     if not args.apply_flag:
+        if args.json:
+            emit_json(move_payload(False, [], None, []))
+            return 0
         out('')
         out('[DRY-RUN] 未写入。加 --apply 执行。')
         return 0
 
     gate_running(getattr(args, 'require_closed', False))
 
+    # 按对象备份：每条任务存一份完整行，可单条回滚。
+    # 先建备份组，`--create` 新建的工作区也能落进 items/，回滚时反向删除。
+    base = new_backup_set(db_path, 'move')
+    metadata_only = getattr(args, 'metadata_only', False)
+    ws_item = None
+
     if pending:
         now = now_ms()
+        ws_extra = json.dumps({'workspaceIcon': 'folder', 'workspaceColor': 'primary',
+                               'workspaceIndexEnabled': True}, ensure_ascii=False)
         w0 = connect(db_path, write=True)
         try:
             with w0:
@@ -1560,21 +1769,33 @@ def cmd_move(args, con, db_path):
                            'values(?,?,?,?,?,?,?,?,0,null)',
                            (pending['id'], pending['name'], 'local',
                             json.dumps([pending['path']], ensure_ascii=False), 'coding',
-                            json.dumps({'workspaceIcon': 'folder', 'workspaceColor': 'primary',
-                                        'workspaceIndexEnabled': True}, ensure_ascii=False),
-                            now, now))
+                            ws_extra, now, now))
         finally:
             w0.close()
+        # 这行是本次操作插入的，回滚必须删掉，否则 rollback --batch 后留孤儿工作区
+        mp_ws = os.path.join(base, 'items', f"workspaces-{pending['id']}.json")
+        ws_row = {'workspace_id': pending['id'], 'name': pending['name'],
+                  'workspace_source': 'local',
+                  'root_paths_json': json.dumps([pending['path']], ensure_ascii=False),
+                  'product_mode': 'coding', 'extra_json': ws_extra,
+                  'created_at': now, 'updated_at': now, 'archived': 0, 'deleted_at': None}
+        with open(mp_ws, 'w', encoding='utf-8') as f:
+            json.dump({'version': 1, 'table': 'workspaces', 'key_column': 'workspace_id',
+                       'key_value': pending['id'], 'op': 'insert',
+                       'saved_at': int(time.time() * 1000), 'row': ws_row,
+                       'meta': {'reason': 'move --create'}}, f, ensure_ascii=False, indent=2)
+        ws_item = {'manifest': os.path.basename(mp_ws), 'table': 'workspaces',
+                   'title': pending['name'], 'status': 'inserted', 'op': 'insert'}
         out(f"已创建工作区: {pending['name']} -> {pending['path']}")
-
-    # 按对象备份：每条任务存一份完整行，可单条回滚
-    base = new_backup_set(db_path, 'move')
-    metadata_only = getattr(args, 'metadata_only', False)
 
     et = {'mode': 'local',
           'host': {'id': 'local', 'kind': 'local', 'label': 'Local'},
           'workspace': {'id': et_id, 'path': root}}
     et_json = json.dumps(et, ensure_ascii=False, separators=(',', ':'))
+
+    # 搬之前的项目目录快照：搬完之后 find_project_dir 只会命中新目录，
+    # 用它清空目录才有效（原来在搬完后求值，removed 永远为空）。
+    pre_dirs = {r['session_id']: find_project_dir(r['session_id']) for r in plan}
 
     w = connect(db_path, write=True)
     results = []
@@ -1604,17 +1825,20 @@ def cmd_move(args, con, db_path):
                       and load_json(chk['execution_target_json']).get('workspace', {}).get('path') == root)
                 moved_files = sum(1 for f in files if f.get('status') == 'moved')
                 mem = next((f for f in files if f.get('kind') == 'memory'), None)
-                mem_n = len(mem.get('report', {}).get('merged', [])) if mem else 0
+                rep = (mem or {}).get('report', {}) if mem else {}
+                mem_n = len(rep.get('copied', [])) + len(rep.get('merged', []))
                 results.append({'session_id': sid, 'title': r['title'],
                                 'status': 'ok' if ok else 'verify_failed',
                                 'manifest': os.path.basename(mp),
-                                'files_moved': moved_files, 'memory_merged': mem_n})
+                                'files_moved': moved_files, 'memory_merged': mem_n,
+                                'memory_report': rep})
                 extra = ''
                 if files:
                     extra = f'  文件 {moved_files}'
-                    if mem:
-                        rep = mem.get('report', {})
-                        extra += f"｜记忆 +{len(rep.get('merged', []))}/跳过 {len(rep.get('skipped', []))}"
+                    if mem and mem.get('status') == 'merged':
+                        extra += (f"｜记忆 新增{len(rep.get('copied', []))}"
+                                  f"/合并{len(rep.get('merged', []))}"
+                                  f"/跳过{len(rep.get('skipped', []))}")
                 out(f"[{'OK' if ok else 'WARN'}] {sid[:8]}  {(r['title'] or '')[:30]}{extra}")
             except Exception as ex:
                 if files:
@@ -1628,9 +1852,10 @@ def cmd_move(args, con, db_path):
 
     removed = []
     if not getattr(args, 'keep_orphans', False):
-        removed = clean_orphan_dirs([find_project_dir(x['session_id']) for x in plan],
+        removed = clean_orphan_dirs([pre_dirs.get(x['session_id']) for x in plan],
                                     keep=[os.path.join(projects_root(), encode_cwd(root))])
-    batch = write_batch_manifest(base, results, note=f'move -> {ws["name"]} ({root})',
+    batch_items = results + ([ws_item] if ws_item else [])
+    batch = write_batch_manifest(base, batch_items, note=f'move -> {ws["name"]} ({root})',
                                  extra={'removed_dirs': removed})
     ok_n = sum(1 for x in results if x['status'] == 'ok')
     bad_n = len(results) - ok_n
@@ -1645,8 +1870,7 @@ def cmd_move(args, con, db_path):
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('迁移')
     if args.json:
-        print(json.dumps({'target': ws['name'], 'backup': base, 'results': results},
-                         ensure_ascii=False, indent=2))
+        emit_json(move_payload(True, results, base, removed))
     return 0 if bad_n == 0 else 1
 
 
@@ -1666,7 +1890,18 @@ def cmd_repair(args, con, db_path):
             continue
         plan.append((r, cur, want_dir))
 
+    plan_json = [{'sid': r['session_id'], 'title': r['title'], 'from': cur, 'to': want_dir}
+                 for r, cur, want_dir in plan]
+
+    def repair_payload(applied, results, backup, removed_dirs):
+        return {'applied': applied, 'plan': plan_json, 'results': results,
+                'backup': backup, 'removed_dirs': removed_dirs,
+                'warnings': list(WARNINGS)}
+
     if not plan:
+        if args.json:
+            emit_json(repair_payload(False, [], None, []))
+            return 0
         out('没有需要修复的任务：所有项目目录都与当前 cwd 一致')
         return 0
 
@@ -1688,11 +1923,13 @@ def cmd_repair(args, con, db_path):
     explicit = getattr(args, 'memory_mode', None)
 
     if not args.apply_flag:
-        if not args.json:
-            ded = sum(1 for _r, cur, _w in plan if cur and dir_counts.get(cur) == 1)
-            out('')
-            out(f'其中 {ded} 条来自独享目录（记忆会合并），{len(plan) - ded} 条来自共用目录（记忆留在原项目）')
-            out('[DRY-RUN] 未写入。加 --apply 执行。')
+        if args.json:
+            emit_json(repair_payload(False, [], None, []))
+            return 0
+        ded = sum(1 for _r, cur, _w in plan if cur and dir_counts.get(cur) == 1)
+        out('')
+        out(f'其中 {ded} 条来自独享目录（记忆会合并），{len(plan) - ded} 条来自共用目录（记忆留在原项目）')
+        out('[DRY-RUN] 未写入。加 --apply 执行。')
         return 0
 
     gate_running(getattr(args, 'require_closed', False))
@@ -1707,16 +1944,18 @@ def cmd_repair(args, con, db_path):
                                           memory_mode=mode)
             moved = sum(1 for x in recs if x.get('status') == 'moved')
             mem = next((x for x in recs if x.get('kind') == 'memory'), None)
+            rep = (mem or {}).get('report', {}) if mem else {}
             mem_state = '-'
             if mem:
                 if mem['status'] == 'merged':
-                    rep = mem.get('report', {})
-                    mem_state = f"+{len(rep.get('merged', []))} 跳过 {len(rep.get('skipped', []))}"
+                    mem_state = (f"新增{len(rep.get('copied', []))}"
+                                 f"/合并{len(rep.get('merged', []))}"
+                                 f"/跳过{len(rep.get('skipped', []))}")
                 else:
                     mem_state = '共用目录，未搬'
             results.append({'session_id': sid, 'title': r['title'], 'from': cur,
                             'to': want_dir, 'status': 'ok', 'files_moved': moved,
-                            'memory': mem_state})
+                            'memory': mem_state, 'memory_report': rep})
             out(f"[OK] {sid[:8]}  文件 {moved}｜记忆 {mem_state}")
         except Exception as ex:
             if recs:
@@ -1739,8 +1978,26 @@ def cmd_repair(args, con, db_path):
             out(f'  - {os.path.basename(d)}')
     out(f'备份与清单: {base}')
     if args.json:
-        print(json.dumps({'backup': base, 'results': results}, ensure_ascii=False, indent=2))
+        emit_json(repair_payload(True, results, base, removed))
     return 0 if ok_n == len(results) else 1
+
+
+def _pad(s, width):
+    """按终端显示宽度左对齐补空格（CJK 记 2 列）。
+
+    `f'{name:<24}'` 按字符数补位，中文名会把后面几列整体右移。
+    """
+    w = sum(2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in s)
+    return s + ' ' * max(0, width - w)
+
+
+def workspace_device(w):
+    """工作区所属设备：本地 → 本机；对端 → workspace_source 第二段前 8 位。"""
+    src = (w['workspace_source'] or '')
+    if src.startswith('local'):
+        return '本机'
+    parts = src.split(':')
+    return (parts[1][:8] if len(parts) > 1 and parts[1] else '对端')
 
 
 def cmd_workspace(args, con, db_path):
@@ -1753,17 +2010,19 @@ def cmd_workspace(args, con, db_path):
                              'where deleted_at is null group by workspace_id'):
             counts[r[0]] = r[1]
         if args.json:
-            print(json.dumps([{'id': w['workspace_id'], 'name': w['name'],
-                               'source': w['workspace_source'], 'root': primary_root(w),
-                               'sessions': counts.get(w['workspace_id'], 0),
-                               'deleted': bool(w['deleted_at'] if 'deleted_at' in w.keys() else 0)}
-                              for w in rows], ensure_ascii=False, indent=2))
+            emit_json([{'id': w['workspace_id'], 'name': w['name'],
+                        'source': w['workspace_source'], 'device': workspace_device(w),
+                        'root': primary_root(w),
+                        'sessions': counts.get(w['workspace_id'], 0),
+                        'deleted': bool(w['deleted_at'] if 'deleted_at' in w.keys() else 0)}
+                       for w in rows])
             return 0
-        out(f"{'名称':<24} {'任务':>4} {'来源':<10} 根路径")
-        out('-' * 90)
+        out(f"{_pad('名称', 24)} {'任务':>4} {'来源':<6} {_pad('设备', 10)} 根路径")
+        out('-' * 100)
         for w in rows:
             src = 'local' if (w['workspace_source'] or '').startswith('local') else 'peer'
-            out(f"{w['name'][:24]:<24} {counts.get(w['workspace_id'], 0):>4} {src:<10} {primary_root(w)}")
+            out(f"{_pad(w['name'][:24], 24)} {counts.get(w['workspace_id'], 0):>4} {src:<6} "
+                f"{_pad(workspace_device(w), 10)} {primary_root(w)}")
         return 0
 
     if sub == 'new':
@@ -1773,6 +2032,12 @@ def cmd_workspace(args, con, db_path):
         exists = [w for w in load_workspaces(con)
                   if (w['name'] or '') == name and (w['workspace_source'] or '').startswith('local')]
         if exists:
+            if args.json:
+                emit_json({'created': False, 'reason': '同名工作区已存在',
+                           'items': [{'id': w['workspace_id'], 'name': w['name'],
+                                      'root': primary_root(w)} for w in exists],
+                           'applied': False, 'warnings': list(WARNINGS)})
+                return 0
             out(f'同名工作区已存在，不再新建：')
             for w in exists:
                 src = 'local' if (w['workspace_source'] or '').startswith('local') else 'peer'
@@ -1781,23 +2046,28 @@ def cmd_workspace(args, con, db_path):
             out('如需把任务归入其中，直接用 move --to <名称或UUID>。')
             return 0
         norm = os.path.normpath(path)
-        if os.path.exists(norm):
+        dir_exists = os.path.exists(norm)
+        if dir_exists:
             out(f'目录已存在: {norm}（直接复用）')
         else:
-            out(f'[NOTE] 目录不存在: {norm}')
+            warn(f'目录不存在: {norm}', 'NOTE')
             out('       技能不会自动创建目录，请先确认是否要建，或改用已有路径。')
             if not args.allow_missing:
+                if args.json:
+                    emit_json({'created': False, 'reason': '目录不存在，需 --allow-missing',
+                               'name': name, 'path': norm, 'dir_exists': False,
+                               'applied': False, 'warnings': list(WARNINGS)})
+                    return 0
                 out('       如确认要在不存在路径上建工作区，加 --allow-missing。')
                 return 0
         new_id = str(uuid.uuid4())
         now = now_ms()
-        if args.json:
-            print(json.dumps({'id': new_id, 'name': name, 'path': norm,
-                              'dir_exists': os.path.exists(norm), 'applied': bool(args.apply_flag)},
-                             ensure_ascii=False, indent=2))
-            if not args.apply_flag:
-                return 0
         if not args.apply_flag:
+            if args.json:
+                emit_json({'created': False, 'id': new_id, 'name': name, 'path': norm,
+                           'dir_exists': dir_exists, 'applied': False,
+                           'warnings': list(WARNINGS)})
+                return 0
             out('')
             out(f'[DRY-RUN] 将新建工作区 {name} -> {norm}（id {new_id}）')
             return 0
@@ -1818,6 +2088,10 @@ def cmd_workspace(args, con, db_path):
         finally:
             w.close()
         out(f'已创建工作区 {name} -> {norm}')
+        if args.json:
+            emit_json({'created': True, 'id': new_id, 'name': name, 'path': norm,
+                       'dir_exists': dir_exists, 'applied': True,
+                       'backup': os.path.basename(bk), 'warnings': list(WARNINGS)})
         return 0
 
     # 其余子命令都需要定位工作区
@@ -1831,12 +2105,12 @@ def cmd_workspace(args, con, db_path):
     if sub == 'rename':
         if not args.new_name:
             die('workspace rename 需要 --new-name')
-        if args.json and not args.apply_flag:
-            print(json.dumps({'id': ws['workspace_id'], 'old': ws['name'], 'new': args.new_name,
-                              'applied': False}, ensure_ascii=False, indent=2))
-            return 0
         out(f"重命名: {ws['name']} -> {args.new_name}")
         if not args.apply_flag:
+            if args.json:
+                emit_json({'id': ws['workspace_id'], 'old': ws['name'], 'new': args.new_name,
+                           'applied': False, 'warnings': list(WARNINGS)})
+                return 0
             out('[DRY-RUN] 未写入')
             return 0
         gate_running(getattr(args, 'require_closed', False))
@@ -1850,20 +2124,24 @@ def cmd_workspace(args, con, db_path):
         finally:
             w.close()
         out('已重命名')
+        if args.json:
+            emit_json({'id': ws['workspace_id'], 'old': ws['name'], 'new': args.new_name,
+                       'applied': True, 'backup': os.path.basename(bk),
+                       'warnings': list(WARNINGS)})
         return 0
 
     if sub in ('archive', 'unarchive'):
         val = 1 if sub == 'archive' else 0
-        if args.json and not args.apply_flag:
-            print(json.dumps({'id': ws['workspace_id'], 'archive': val, 'applied': False},
-                             ensure_ascii=False, indent=2))
-            return 0
         out(f"{'归档' if val else '取消归档'}工作区: {ws['name']}")
         if not args.apply_flag:
+            if args.json:
+                emit_json({'id': ws['workspace_id'], 'archive': val, 'applied': False,
+                           'warnings': list(WARNINGS)})
+                return 0
             out('[DRY-RUN] 未写入')
             return 0
         gate_running(getattr(args, 'require_closed', False))
-        make_backup(db_path, 'wsarch')
+        bk = make_backup(db_path, 'wsarch')
         w = connect(db_path, write=True)
         try:
             with w:
@@ -1872,6 +2150,9 @@ def cmd_workspace(args, con, db_path):
         finally:
             w.close()
         out('已完成')
+        if args.json:
+            emit_json({'id': ws['workspace_id'], 'archive': val, 'applied': True,
+                       'backup': os.path.basename(bk), 'warnings': list(WARNINGS)})
         return 0
 
     if sub == 'retarget':
@@ -1890,11 +2171,11 @@ def cmd_workspace(args, con, db_path):
             out(f'将级联更新 {n_all} 条任务的 cwd 与执行目标{extra}')
         if not args.apply_flag:
             if args.json:
-                print(json.dumps({'id': ws['workspace_id'], 'from': root_old, 'to': root_new,
-                                  'sessions': n_sess, 'sessions_all': n_all, 'applied': False},
-                                 ensure_ascii=False, indent=2))
-            else:
-                out('[DRY-RUN] 未写入')
+                emit_json({'id': ws['workspace_id'], 'from': root_old, 'to': root_new,
+                           'sessions': n_sess, 'sessions_all': n_all, 'applied': False,
+                           'warnings': list(WARNINGS)})
+                return 0
+            out('[DRY-RUN] 未写入')
             return 0
         gate_running(getattr(args, 'require_closed', False))
         bk = make_backup(db_path, 'wsretarget')
@@ -1920,6 +2201,14 @@ def cmd_workspace(args, con, db_path):
         finally:
             w.close()
         out('已改路径并级联更新' + (f'（跳过影子任务 {skipped} 条）' if skipped else ''))
+        note = 'cwd 已改，项目目录未搬；如需恢复项目记忆请运行 repair（先干跑看清单）'
+        out('')
+        out(f'注意：{note}')
+        if args.json:
+            emit_json({'id': ws['workspace_id'], 'from': root_old, 'to': root_new,
+                       'sessions': n_sess, 'sessions_all': n_all, 'applied': True,
+                       'skipped_peer': skipped, 'backup': os.path.basename(bk),
+                       'note': note, 'warnings': list(WARNINGS)})
         return 0
 
     if sub == 'delete':
@@ -1933,10 +2222,11 @@ def cmd_workspace(args, con, db_path):
             die('删除类操作需要 --yes 确认（软删除，可在 Qoder 回收站恢复）')
         if not args.apply_flag:
             if args.json:
-                print(json.dumps({'id': ws['workspace_id'], 'name': ws['name'],
-                                  'sessions': len(sess), 'applied': False}, ensure_ascii=False, indent=2))
-            else:
-                out('[DRY-RUN] 未写入')
+                emit_json({'id': ws['workspace_id'], 'name': ws['name'],
+                           'sessions': len(sess), 'alive': len(alive), 'applied': False,
+                           'warnings': list(WARNINGS)})
+                return 0
+            out('[DRY-RUN] 未写入')
             return 0
         gate_running(getattr(args, 'require_closed', False))
         bk = make_backup(db_path, 'wsdel')
@@ -1953,6 +2243,10 @@ def cmd_workspace(args, con, db_path):
         finally:
             w.close()
         out(f'已软删除工作区及 {len(alive)} 条任务')
+        if args.json:
+            emit_json({'id': ws['workspace_id'], 'name': ws['name'],
+                       'sessions': len(sess), 'alive': len(alive), 'applied': True,
+                       'backup': os.path.basename(bk), 'warnings': list(WARNINGS)})
         return 0
 
     die(f'未知的 workspace 子命令: {sub}')
@@ -1965,13 +2259,13 @@ def cmd_backup(args, con, db_path):
         files = list_backups(db_path)
         sets = backup_sets(db_path)
         if args.json:
-            print(json.dumps({'root': work_root(),
-                              'snapshots': [{'path': p, 'size': os.path.getsize(p),
-                                             'mtime': os.path.getmtime(p)} for p in files],
-                              'sets': [{'path': p, 'mtime': os.path.getmtime(p),
-                                        'batch': os.path.isfile(os.path.join(p, 'batch.json'))}
-                                       for p in sets],
-                              }, ensure_ascii=False, indent=2))
+            emit_json({'root': work_root(),
+                       'snapshots': [{'path': p, 'size': os.path.getsize(p),
+                                      'mtime': os.path.getmtime(p)} for p in files],
+                       'sets': [{'path': p, 'mtime': os.path.getmtime(p),
+                                 'batch': os.path.isfile(os.path.join(p, 'batch.json'))}
+                                for p in sets],
+                       'warnings': list(WARNINGS)})
             return 0
         out(f'备份根目录: {work_root()}')
         if not files and not sets:
@@ -1992,6 +2286,8 @@ def cmd_backup(args, con, db_path):
     gate_running(getattr(args, 'require_closed', False))
     p = make_backup(db_path, 'manual')
     out(f'已备份: {p}')
+    if args.json:
+        emit_json({'path': p, 'root': work_root(), 'ok': True, 'warnings': list(WARNINGS)})
     return 0
 
 
@@ -2007,8 +2303,22 @@ def cmd_rollback(args, con, db_path):
     if not args.yes:
         die('回滚会覆盖当前数据库，需要 --yes 确认')
     if not args.apply_flag:
+        if args.json:
+            emit_json({'restored': 0, 'failed': 0, 'items': [], 'applied': False,
+                       'backup': src, 'warnings': list(WARNINGS)})
+            return 0
         out(f'[DRY-RUN] 将用 {os.path.basename(src)} 覆盖当前库（当前库会先另存一份）')
         return 0
+    # 整库覆盖是 copy2 + 删 -wal/-shm，不是 WAL 事务：应用在跑时会把库写坏。
+    # 其它写操作有事务保护，这一条没有，所以这里必须硬拦（--force-hot 才放行）。
+    if not CUSTOM_DB:
+        n = qoder_running()
+        if n and not getattr(args, 'force_hot', False):
+            die(f'检测到 {n} 个 Qoder 进程在运行。整库覆盖无法热写'
+                f'（直接复制文件 + 删 -wal/-shm，会把库写坏）。'
+                f'请完全退出 Qoder 后重试；确要在运行中执行，加 --force-hot。', 3)
+        if n:
+            warn(f'--force-hot：{n} 个 Qoder 进程在运行，整库覆盖有损坏风险', 'WARN')
     gate_running(getattr(args, 'require_closed', False))
     safety = make_backup(db_path, 'pre-rollback')
     out(f'当前库已另存: {os.path.basename(safety)}')
@@ -2022,6 +2332,10 @@ def cmd_rollback(args, con, db_path):
             except OSError:
                 pass
     out(f'已从 {os.path.basename(src)} 恢复')
+    if args.json:
+        emit_json({'restored': 1, 'failed': 0,
+                   'items': [{'backup': src, 'safety': safety, 'status': 'ok'}],
+                   'applied': True, 'warnings': list(WARNINGS)})
     return 0
 
 
@@ -2051,35 +2365,52 @@ def rollback_items(args, con, db_path):
     if not args.yes:
         die('按清单回滚会覆盖对应任务的当前值，需要 --yes 确认')
     if not args.apply_flag:
+        if args.json:
+            emit_json({'restored': 0, 'failed': 0, 'items': [], 'applied': False,
+                       'warnings': list(WARNINGS)})
+            return 0
         out('[DRY-RUN] 未写入')
         return 0
 
     gate_running(getattr(args, 'require_closed', False))
     w = connect(db_path, write=True)
     ok = fail = 0
+    items = []
     try:
         for p in paths:
+            entry = {'path': p}
             try:
                 with open(p, encoding='utf-8') as f:
                     payload = json.load(f)
+                entry.update({'table': payload.get('table'),
+                              'key': str(payload.get('key_value'))[:8],
+                              'op': payload.get('op') or 'restore'})
                 with w:
                     n = restore_row(w, payload)
                 notes = undo_files(payload.get('files'))
+                entry['files'] = sorted(set(notes))
                 if n:
                     ok += 1
+                    entry['status'] = 'ok'
                     out(f"[OK] {payload['table']}  {str(payload['key_value'])[:8]}"
                         + (f"  文件: {'/'.join(sorted(set(notes)))}" if notes else ''))
                 else:
                     fail += 1
+                    entry['status'] = 'miss'
                     out(f"[MISS] {payload['table']}  {str(payload['key_value'])[:8]}（未命中）")
             except Exception as ex:
                 fail += 1
+                entry.update({'status': 'failed', 'error': str(ex)})
                 out(f'[FAIL] {os.path.basename(p)}  {ex}')
+            items.append(entry)
     finally:
         w.close()
     out('')
     out(f'完成：恢复 {ok}，失败 {fail}')
     post_write_hint('回滚')
+    if args.json:
+        emit_json({'restored': ok, 'failed': fail, 'items': items, 'applied': True,
+                   'warnings': list(WARNINGS)})
     return 0 if fail == 0 else 1
 
 
@@ -2145,8 +2476,10 @@ def build_parser():
     rp.add_argument('--assist-cap', type=int, default=1500, help='单条助手消息保留字符数')
     rp.add_argument('--shards', type=int, default=0,
                     help='导出时按字数做 LPT 均衡分组，生成 shards/groupN.json')
-    rp.add_argument('--min-title-len', type=int, default=20, dest='min_title_len')
-    rp.add_argument('--max-title-len', type=int, default=30, dest='max_title_len')
+    rp.add_argument('--min-title-len', type=int, default=12, dest='min_title_len',
+                    help='标题最小长度（字符，含 [分类] 前缀，默认 12）')
+    rp.add_argument('--max-title-len', type=int, default=30, dest='max_title_len',
+                    help='标题最大长度（字符，含 [分类] 前缀，默认 30）')
     rp.add_argument('--require-prefix', action='store_true', dest='require_prefix',
                     help='要求标题带 [短分类] 前缀')
 
@@ -2156,8 +2489,8 @@ def build_parser():
     mp.add_argument('--filter', help='筛选表达式')
     mp.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true',
                     help='真正落盘')
-    mp.add_argument('--skip-in-target', action='store_true', default=True,
-                    help='已在目标工作区的任务自动跳过（默认开启）')
+    mp.add_argument('--skip-in-target', action=argparse.BooleanOptionalAction, default=True,
+                    help='已在目标工作区的任务自动跳过（默认开启；--no-skip-in-target 关闭）')
     mp.add_argument('--metadata-only', action='store_true', dest='metadata_only',
                     help='只改数据库归属，不搬任务文件/记忆/产出')
     mp.add_argument('--keep-orphans', action='store_true', dest='keep_orphans',
@@ -2207,15 +2540,33 @@ def build_parser():
     rb.add_argument('--manifest', help='单条清单（qoder-cm-backups/**/items/*.json）')
     rb.add_argument('--batch', help='整批清单（qoder-cm-backups/**/batch.json）')
     rb.add_argument('--yes', action='store_true')
+    rb.add_argument('--force-hot', action='store_true', dest='force_hot',
+                    help='整库覆盖时允许 Qoder 运行中执行（默认硬拦，容易写坏库）')
     rb.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true')
 
     return p
 
 
+def _force_utf8(stream):
+    """把输出流切到 UTF-8。
+
+    Windows 控制台/管道按 locale（GBK）编码，标题里一个 emoji 就 UnicodeEncodeError
+    崩掉整条命令。reconfigure 在 3.7+ 的 TextIOWrapper 上可用，其它情况静默跳过。
+    """
+    try:
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+
 def main(argv=None):
-    global CUSTOM_DB, BACKUP_ROOT, QODER_HOME_OVERRIDE
+    global CUSTOM_DB, BACKUP_ROOT, QODER_HOME_OVERRIDE, JSON_MODE
+    _force_utf8(sys.stdout)
+    _force_utf8(sys.stderr)
     parser = build_parser()
     args = parser.parse_args(argv)
+    JSON_MODE = bool(getattr(args, 'json', False))
     if getattr(args, 'backup_dir', None):
         BACKUP_ROOT = os.path.abspath(args.backup_dir)
     if getattr(args, 'qoder_home', None):
@@ -2226,7 +2577,7 @@ def main(argv=None):
             default = os.path.abspath(cand)
             break
     db_path = resolve_db(args.db)
-    CUSTOM_DB = bool(args.db) and os.path.abspath(args.db) != default
+    CUSTOM_DB = is_custom_db(args.db, default)
     con = connect(db_path, write=False)
     try:
         if args.cmd == 'doctor':

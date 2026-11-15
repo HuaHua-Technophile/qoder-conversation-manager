@@ -36,7 +36,7 @@ python <skill>/scripts/qoder_sessions.py rename --export --shards 6 --filter "st
 3. 必须覆盖清单里每一条，不得跳过。
 
 标题规则：
-1. 简体中文，正文 8–22 个汉字；SSH/RDP/RAID5/NAS/WinGet 等技术名词保留原文，与中文之间加半角空格。
+1. 简体中文，正文 8–22 个汉字（加 `[分类] ` 前缀合计 12–30 字符，脚本默认按此校验）；SSH/RDP/RAID5/NAS/WinGet 等技术名词保留原文，与中文之间加半角空格。
 2. 结构优先「动作 + 具体对象」，要能和同批其他任务区分。
 3. 禁止引号、书名号、句号、问号、换行、文件路径、代码。
 4. 不得照抄现有标题。
@@ -56,18 +56,17 @@ python <skill>/scripts/qoder_sessions.py rename --export --shards 6 --filter "st
 3. 交叉校验：
    - 同一 `cwd` 下的标题是否指向不同对象（尤其「工具包」「闲鱼」「RDP」这类同主题群）。
    - 分类是否收敛在 8–12 个，别出现十几个一次性短类。
-   - 长度是否越界（用 `--min-title-len` / `--max-title-len` 约束）。
+   - 长度是否越界（默认 12–30 字符，含 `[分类] ` 前缀；确实要放宽再用 `--min-title-len` / `--max-title-len`）。
 4. 先干跑：
 
 ```bash
-python <skill>/scripts/qoder_sessions.py rename --import titles.json --min-title-len 10 --max-title-len 30
+python <skill>/scripts/qoder_sessions.py rename --import titles.json
 ```
 
 5. 核对清单无异常后落盘：
 
 ```bash
-python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply \
-  --min-title-len 10 --max-title-len 30
+python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply
 ```
 
 脚本会输出每条 `[OK]` / `[WARN]`、成功失败计数，以及备份组路径。误改可用：
@@ -81,7 +80,7 @@ python <skill>/scripts/qoder_sessions.py rollback --manifest "<备份组>/items/
 用户嫌标题太长或太短时，**不要重读全文**。保留上一轮的 `category` / `why`，只让子智能体在原有 `new_title` 上扩写或压缩：
 
 ```json
-{"sid": "...", "pass1_title": "...", "category": "网络", "target": "20-30 字"}
+{"sid": "...", "pass1_title": "...", "category": "网络", "target": "12-30 字符（含前缀）"}
 ```
 
 合并后直接再跑一次 `rename --import`（备份会另起一组，不会覆盖上一轮）。

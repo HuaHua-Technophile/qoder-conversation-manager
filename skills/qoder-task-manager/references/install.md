@@ -13,12 +13,18 @@ qoder-task-manager/
 ├── scripts/
 │   ├── qoder_sessions.py
 │   └── build_pkg.py
-└── references/
-    ├── qoder-storage.md
-    ├── subagent-playbook.md
-    ├── cases.md
-    └── install.md
+├── references/
+│   ├── qoder-storage.md
+│   ├── subagent-playbook.md
+│   ├── cases.md
+│   └── install.md
+├── examples/
+│   └── titles.example.json      # titles.json 的合法样例（默认长度参数下可直接导入）
+└── tests/
+    └── test_qoder_sessions.py   # 端到端测试（标准库 unittest，真跑 CLI）
 ```
+
+`tests/` 不进发布包（`build_pkg.py` 只打包 `scripts / references / examples`），但留在仓库里——拿到源码就可以 `python -m unittest discover -s skills/qoder-task-manager/tests -v` 自检。`examples/` 会进包。
 
 依赖：Python 3.9+；对 Qoder 数据目录的读写权限。仅支持 Windows（路径探测按 Windows 实现）。
 
@@ -51,7 +57,7 @@ python "<技能目录>/scripts/qoder_sessions.py" --version
 python "<技能目录>/scripts/qoder_sessions.py" doctor
 ```
 
-`doctor` 会打印数据库路径与七项检查，全部 `OK` 说明数据目录与权限正常。
+`doctor` 会打印数据库路径与**七项基础检查**（数据库、WAL、表结构、Qoder 进程、工作区路径、影子任务、备份），全部 `OK` 说明数据目录与权限正常；加 `--deep` 再查五项（任务文件、目录一致性、项目记忆、产出索引、孤立项目目录）。刚装好还没备份过时，「备份」项只提示先跑一次 `backup`、**不判失败**（首次写入会自动建备份）。
 
 ## 安全演练（不碰真库）
 
@@ -82,5 +88,5 @@ cp -r "$SRC" "$HOME/.qoder/skills/"
 |---|---|
 | 宿主技能列表没有出现 | 检查目录名与 frontmatter 的 `name` 一致；重启任务或执行宿主的技能重载命令 |
 | 运行报 `未找到 Qoder 数据库` | 用 `--db` 指向 `main.sqlite`；确认 Qoder 已安装并登录过 |
-| 中文输出乱码 | 终端编码设为 UTF-8（`chcp 65001`） |
+| 中文输出乱码 | 终端编码设为 UTF-8（`chcp 65001`）；脚本已把 stdout/stderr 强制成 UTF-8，GBK 终端会显示乱码但不会再抛 `UnicodeEncodeError` |
 | `doctor` 提示工作区路径不可达 | 该工作区根目录可能在外接盘或另一台设备上，属正常 |

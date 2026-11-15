@@ -1,5 +1,49 @@
 # CHANGELOG
 
+## 1.7.0 — 2026-11-16
+
+审计后的一次迭代：24 项修复 + 端到端测试套件。按「数据安全 / 输出契约 / 功能正确性 / 健壮性 / 工程化」五组推进，**全部在副本库与独立夹具上验证，真实库零写入**。
+
+### 数据安全（这四处会真丢数据）
+
+- **`backup_path()` 备份被同名文件覆盖**：原来只按 basename 落到 `files/<sid8>/<bucket>/`，`out/x/log.txt` 与 `out/y/log.txt` 备份成同一个 `output/log.txt`，后者覆盖前者——原始内容直接丢。现在文件按**相对 cwd 的相对路径**存放（`files/<sid8>/output/out/x/log.txt`，自动建中间目录），拿不到相对路径时退回 `basename-<绝对路径 sha1 前 8 位>`；目录（sidecar / memory）保持整棵复制。实测搬两个不同子目录的同名文件后两份都在、内容各自正确。另加一道守卫：`rel` 是盘相对路径（`D:x.txt`）时 `os.path.join` 会把它退化成自身、把备份写到备份根之外，现按 `os.path.splitdrive` 拒绝并走 `basename-sha1` 回退。
+- **整库回滚在 Qoder 运行时不拦截**：`rollback --backup` 是 `shutil.copy2` 覆盖文件 + 删 `-wal/-shm`，不是 WAL 事务，应用在跑时会把库写坏；其它写操作都有事务保护，只有这条裸奔。现在检测到 Qoder 进程直接 `die(...,3)`，新增 `--force-hot` 逃生开关（显式传才放行并打风险提示）；`--manifest/--batch` 分支行为不变。
+- **`CUSTOM_DB` 判定按路径语义比较（P0）**：`--db` 是否指向副本原来用 `os.path.abspath(...) != default` 判断，不做大小写归一——`--db` 只要写成 `c:\users\…` 这种小写形式，同一个库就被判成「副本」，而 `CUSTOM_DB` 是 A2 的唯一开关，一旦为真会**同时**跳过整库覆盖硬拦、`gate_running()`、`post_write_hint()` 三处保护，正好把上一条堵的洞重新打开。现抽成 `is_custom_db()`，先 `realpath`（解开 junction / 符号链接 / `\\?\` 前缀，否则 `mklink /J` 一条指向同一个库的链接就能绕过硬拦）再 `normcase`（大小写不敏感）。v1.6.0 里它只是个提示开关无所谓，v1.7.0 起它是安全闸门，必须按路径语义比。
+- **回滚清单加表名/主键白名单（P0）**：`restore_row()` 要把表名与主键列拼进 SQL（标识符无法用占位符），原来完全不校验——一份手改的清单 `{"table":"workspaces","key_column":"1 or 1=1 or workspace_id","op":"insert","key_value":"x"}` 就能把 `workspaces` 整表删空，还回报 `[OK]`。现按 `KEY_COLUMNS = {chat_sessions: session_id, workspaces: workspace_id}` 校验，不匹配直接 `die(...,2)`（JSON 模式仍有 `{"error","exit"}` 出口），并中止整批而不是静默跳过。
+- **`move` 承诺的「搬空的源项目目录自动删除」从未生效**：清空目录时是在**搬完之后**才求值 `find_project_dir`，那时只会命中新目录（在 keep 里），`removed_dirs` 永远为空，`projects/` 下永久堆积空目录。现在进循环前先拍 `pre_dirs` 快照，搬完按快照清理（与 `repair` 的写法对齐）。实测搬走目录里最后一条任务后目录被删、`batch.json.removed_dirs` 非空。
+
+### 输出契约（`--json` 现在能直接喂给 `json.load`）
+
+- **`--json --apply` 不再吐两份 JSON + 人话**：新增模块级 `JSON_MODE`，`out()` 在 JSON 模式下静音、`warn()` 收集告警、`die()` 输出 `{"error":..., "exit":N}`，每条命令只在最后 `emit_json()` 打**一份**文档。
+- **空结果也是合法 JSON**：`move` 无任务、`rename --export` 无匹配时输出 `{"target":..., "plan":[], "applied":false, ...}` / `{"out_dir":null, "count":0, "items":[], ...}`，不再打印「没有需要迁移的任务」。
+- **告警不再污染 stdout**：`[WARN]` / `[NOTE]` 统一进 `warnings` 字段（数组型结果如 `list` 打到 stderr）。
+- 形状固定：`rename --export {out_dir,count,items,shards,skipped,warnings}`、`rename --import {applied,plan,touched,skipped,results,backup,warnings}`、`move {target,plan,applied,results,backup,removed_dirs,warnings}`、`repair {applied,plan,results,backup,removed_dirs,warnings}`、`rollback {restored,failed,items,warnings}`、`workspace *` 单文档。`... --json --apply | python -c "import json,sys;json.load(sys.stdin)"` 已全覆盖通过。
+- **影子计数口径**：`list` 的「另有 N 条影子任务未显示」按「同一筛选范围内再加 `--include-peer` 会多出来的行数」统计，在 `--limit` **之前**算，不能用「全库总数 − 结果数」——否则 `--limit`/`--keyword`/`--workspace` 会把被筛掉的本地任务也算成影子（沙箱实测 `--keyword 路由器` 旧口径报 271，真值 2）。
+
+### 功能正确性
+
+- **标题长度默认值与文档冲突**：`--min-title-len` 默认 20，文档规则却是「正文 8–22 汉字 + `[分类] ` 前缀」（合计 12–30 字符）——`[网络] 排查 RDP 丢包`（14 字符）被拒，仓库自带的 `examples/titles.example.json` 3 条里 2 条不合法。默认改为 **12–30 字符**，错误信息写明「字符」；示例文件补 `category` 字段并调到 3 条全合法。实测不带任何长度参数导入示例，0 条因长度被拒。
+- **`--filter` 不支持的语法静默返回空集**：`title contains x or cwd like y` 原来把 `x or cwd like y` 当字面值匹配，输出「没有匹配的任务」，用户误以为真没有。现在检测 `or` / 括号 / `not` / 比较运算即 `FilterError`（退出码 2），消息点明「只支持 and 连接与 contains/like/startswith/endswith/=/!=」。
+- **`list` 默认隐藏影子任务却不提示**：本机 291 条里 260 条是影子，`list` 只说「共 29 条」，看起来像数据丢了。末尾加一行「另有 N 条影子任务未显示，加 `--include-peer` 查看」，N = **同一筛选范围内**被默认隐藏的影子行数（在 `--limit` 之前统计，口径见下方 B 组最后一条）；`--json` 时该提示走 stderr。
+- **`workspace list` 同名对端工作区无法区分**：`野草云4C8G` 出现两行且完全一样，实际是 `peer:f659e85d…` 与 `peer:c174a08a…` 两台设备。表格加「设备」列（本地 `本机`，对端取设备 ID 前 8 位），`--json` 加 `device` 字段。
+- **`--skip-in-target` 是死开关**：`action='store_true', default=True` 恒为真、无法关闭。改用 `argparse.BooleanOptionalAction`，得到 `--skip-in-target/--no-skip-in-target`；`--no-skip-in-target` 现在真的会把已在目标工作区的任务一起重跑（用于只补搬文件），默认行为不变。顺带把 `--ids` 的两种落空分开报：库里根本没有 → `[WARN] 未匹配到任务`；任务存在但已在目标被跳过 → `[NOTE] 已在目标工作区，跳过（要重跑加 --no-skip-in-target）`，不再把后者误报成前者。
+- **`workspace retarget` 改完不提示后果**：retarget 只改库里的 `cwd`，项目目录仍在旧编码下 → 项目记忆立刻读不到，`doctor --deep` 会报「目录一致性」。成功率后打印「cwd 已改，项目目录未搬；如需恢复项目记忆请运行 repair（先干跑看清单）」，JSON 加 `note` 字段，SKILL.md 与常见错误表同步补行。
+- **记忆合并报告漏报 copied**：`merge_memory()` 返回 `{copied,merged,skipped}`，输出只打 `记忆 +{merged}/跳过{skipped}`，首次迁移实际复制了 2 个文件却显示「记忆 +0」。改成 `记忆 新增N/合并N/跳过N`，`batch.json` 的条目里带上完整 `memory_report`；JSON 结果里的 `memory_merged` 也改成 `copied + merged` 之和（原来只数 merged，copied 3 时仍是 0，按该字段判定的自动化会以为没搬记忆）。
+
+### 健壮性
+
+- **非 UTF-8 控制台遇 emoji 直接 traceback**：Windows 管道按 locale（GBK）编码，标题里一个 emoji 就 `UnicodeEncodeError` 崩掉整条命令（`PYTHONIOENCODING=gbk python … list` 已复现）。`main()` 开头对 stdout/stderr 做 `reconfigure(encoding='utf-8', errors='replace')`，try/except + hasattr 包裹，老版本或非 `TextIOWrapper` 静默跳过。
+- **`find_project_dir` 多副本时结果不确定**：原来返回 `os.listdir()` 遍历里第一个命中，顺序无保证，新旧目录并存时可能选错。新增 `find_project_dirs()`（排序返回全部命中），`find_project_dir()` 取第一个并在命中数 >1 时 `warn` 报出有几个副本。
+- **`rename_apply` 全 ID 分支可能取错行**：`by_short = {sid[:8]: row}` 后写覆盖前写，传完整 36 位 ID 时按前 8 位反查，前缀撞车就改错任务。改为 `by_full` 直查完整 ID；短 ID 分支按前缀统计命中数，>1 时跳过并报「ID 前缀不唯一，请给完整 ID」。
+- **`move --create` 新建的工作区不在任何备份清单里**：`rollback --batch` 之后工作区行残留成孤儿。新建时往备份组写 `items/workspaces-<id>.json`，payload 带 `"op":"insert"`；`restore_row()` 遇到 `op=="insert"` 执行 `delete from workspaces where workspace_id=?`，`batch.json` 的 items 里带上这条。实测回滚后 session 回到原工作区、新建行被删干净。
+
+### 工程化
+
+- **新增端到端测试套件** `tests/test_qoder_sessions.py`：标准库 `unittest`，绝大多数用例**通过 subprocess 真跑 CLI**（不 mock）；只有「Qoder 正在运行」没法用 subprocess 伪造，改用 `mock.patch.object(qs, 'qoder_running')` 直接调 `cmd_rollback()` 断言 exit 3。每个用例用 `tempfile.TemporaryDirectory` 建独立夹具（最小但真实的 schema + `projects/` 目录 + 记忆/产出文件），覆盖路径编码（UNC 与盘符）、筛选表达式正常/非法、标题边界（11/12/30/31 字符）、示例文件回归、rename 往返与 `titleSource`/`titleRevision`、`--json` 单文档、move 的文件/记忆/产出/空目录清理/同名文件备份、rollback 的 `op:insert` 回滚与批量干跑、`doctor --deep` 十二项、安全边界（回滚清单白名单、`is_custom_db` 的 realpath + normcase 判定、盘相对 rel 不越界）、版本一致性。**51 个用例全绿**；`python -m unittest discover -s skills/qoder-task-manager/tests -v` 即可跑。
+- **版本号单一来源**：`build_pkg.py` 改为正则从 `qoder_sessions.py` 读 `VERSION`（读不到才回退 `VERSION_FALLBACK`），CI 的 tag 校验也改读主脚本；SKILL.md frontmatter 由测试兜住——三处任一漂移，测试直接红。
+- **`doctor` 补两项**：`--deep` 增加「孤立项目目录」（`projects/*` 下 jsonl 数为 0 的目录，本机实测就有一个 `D--…-11679d46`）；`备份` 项从「永远 OK」改成真检查——最近备份**超过 14 天**时标 `!!`。「库里有任务但从未备份」只提示 `建议先跑一次 backup`、**不判失败**：首次写入本来就会自动建备份，判失败会让新装用户第一眼看到 `!!`、让自动化拿到 exit 1，还与「七项基础全 OK 说明可用」自相矛盾。
+- **文档同步**：`SKILL.md` 安全规则编号重排为 1..14（原来有两个 6、两个 8、两个 9）、标题规则改 12–30 字符、`--json` 契约写清单文档与空结果、`move` 孤立目录清理确认有效、`retarget` 加 repair 提示、`--filter` 补「不支持 or/括号」；`references/qoder-storage.md` 补「文件按相对路径存放」、已知坑加「整库回滚必须关应用」「retarget 后需 repair」、修正 `workspace.id` 表述（也可能是工作区 UUID，不只 `ws_` 哈希）；`references/subagent-playbook.md` 长度参数对齐新默认值；`.github/workflows/release.yml` 在打包前加跑测试。
+
 ## 1.6.0 — 2026-11-15
 
 新增增量重命名（`rename --pending`），核心是「**改名过的任务，只要之后又对话过就重新判断**」；顺带修掉 `rename --apply` 必定抛 NameError 的老 bug。

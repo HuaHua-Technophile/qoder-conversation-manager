@@ -1,14 +1,17 @@
 [
   {
     "sid": "e3d0af7b-8f30-40a9-a5aa-08b000dc0b3d",
-    "new_title": "把任务迁移技能传到笔记本"
+    "new_title": "把迁移技能装到笔记本并双侧校验",
+    "category": "开发"
   },
   {
     "sid": "2dd673fa",
-    "new_title": "排除代理误判定位 RDP 链路丢包"
+    "new_title": "排除代理误判定位 RDP 链路丢包",
+    "category": "网络"
   },
   {
     "sid": "90227446",
-    "new_title": "三处工具包升版提示词并替换 WebView2"
+    "new_title": "三处工具包升版提示词并替换 WebView2",
+    "category": "系统"
   }
 ]

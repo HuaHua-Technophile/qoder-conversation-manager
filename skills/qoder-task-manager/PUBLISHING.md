@@ -230,10 +230,11 @@ python skills/qoder-task-manager/scripts/build_pkg.py
 **标准流程（GitHub 全自动）**
 
 ```bash
-# 1) 改三处版本号，缺一处 CI 会直接失败
-#    skills/qoder-task-manager/SKILL.md      → version:
-#    skills/qoder-task-manager/scripts/qoder_sessions.py → VERSION
-#    skills/qoder-task-manager/scripts/build_pkg.py      → VERSION
+# 1) 改两处版本号（自 v1.7.0 起版本号只有一个真源）
+#    skills/qoder-task-manager/scripts/qoder_sessions.py → VERSION        ← 真源
+#    skills/qoder-task-manager/SKILL.md                  → version:       ← 必须与真源一致
+#    build_pkg.py 不再手改：它用正则从 qoder_sessions.py 读 VERSION，
+#    读不到才回退 VERSION_FALLBACK（那个常量只在脚本缺失时才生效，正常不用动）
 # 2) 写 CHANGELOG
 git add -A && git commit -m "feat(vX.Y.Z): ..."
 git push
@@ -241,7 +242,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z — 摘要"
 git push origin vX.Y.Z          # ← 到这里 GitHub Release 自动完成
 ```
 
-CI 会先校验 tag 与两处 `VERSION` 是否一致，再打包上传；不一致会 `::error::` 中止，不会发出错版包。
+CI 先校验 tag 与 `qoder_sessions.py` / `build_pkg.py`(读取值) / `SKILL.md` 三处是否一致，再跑测试、打包上传；任一处不一致会 `::error::` 中止，不会发出错版包。`tests/test_qoder_sessions.py` 里的 `test_single_source_of_truth` 会在本地就把这种漂移挡下来。
 
 需要补发历史版本或重跑时，用 `workflow_dispatch` 手动指定 tag：
 
@@ -258,7 +259,8 @@ gh workflow run Release --repo HuaHua-Technophile/qoder-task-manager -f tag=v1.3
 
 ## 发布前自检
 
-- [ ] 三处版本号一致：`SKILL.md` / `qoder_sessions.py` / `build_pkg.py`（CI 会挡，但本地先改省一次失败）
+- [ ] 版本号一致：`qoder_sessions.py` 的 `VERSION` 与 `SKILL.md` 的 `version:`（`build_pkg.py` 自动跟随；CI 与本地测试都会挡）
+- [ ] `python -m unittest discover -s skills/qoder-task-manager/tests -v` 全绿（v1.7.0 起 CI 也跑这一步，红则不发版）
 - [ ] `python scripts/qoder_sessions.py doctor` 通过
 - [ ] `CHANGELOG.md` 已写下本版条目（Release notes 由 CI 自动生成，Changelog 仍是主要说明）
 - [ ] 本地 `python scripts/build_pkg.py` 跑一次，确认能打出两个 zip

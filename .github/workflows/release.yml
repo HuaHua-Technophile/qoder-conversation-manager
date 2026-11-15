@@ -38,17 +38,22 @@ jobs:
 
       - name: Check tag matches VERSION
         run: |
-          PKG_VERSION=$(python -c "import re,pathlib;print(re.search(r\"VERSION = '([^']+)'\", pathlib.Path('skills/qoder-task-manager/scripts/build_pkg.py').read_text()).group(1))")
+          # 版本号单一来源：qoder_sessions.py 的 VERSION；build_pkg 从它读取，SKILL.md 由测试兜住
+          SCRIPT_VERSION=$(python -c "import re,pathlib;print(re.search(r\"VERSION = '([^']+)'\", pathlib.Path('skills/qoder-task-manager/scripts/qoder_sessions.py').read_text()).group(1))")
+          PKG_VERSION=$(cd skills/qoder-task-manager/scripts && python -c "import build_pkg;print(build_pkg.VERSION)")
           SKILL_VERSION=$(python -c "import re,pathlib;print(re.search(r'^version:\s*(\S+)', pathlib.Path('skills/qoder-task-manager/SKILL.md').read_text(), re.M).group(1))")
           TAG_VERSION="${{ steps.ref.outputs.version }}"
-          echo "tag=$TAG_VERSION build_pkg=$PKG_VERSION SKILL.md=$SKILL_VERSION"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ] || [ "$TAG_VERSION" != "$SKILL_VERSION" ]; then
-            echo "::error::版本号不一致：先在 SKILL.md 与 build_pkg.py 里同步到 $TAG_VERSION 再打 tag"
+          echo "tag=$TAG_VERSION script=$SCRIPT_VERSION build_pkg=$PKG_VERSION SKILL.md=$SKILL_VERSION"
+          if [ "$TAG_VERSION" != "$SCRIPT_VERSION" ] || [ "$TAG_VERSION" != "$PKG_VERSION" ] || [ "$TAG_VERSION" != "$SKILL_VERSION" ]; then
+            echo "::error::版本号不一致：先在 qoder_sessions.py 的 VERSION、SKILL.md、build_pkg.py 回退常量里同步到 $TAG_VERSION 再打 tag"
             exit 1
           fi
 
       - name: Doctor (sanity check script imports)
         run: python skills/qoder-task-manager/scripts/qoder_sessions.py --version
+
+      - name: Run tests
+        run: python -m unittest discover -s skills/qoder-task-manager/tests -v
 
       - name: Build packages
         run: python skills/qoder-task-manager/scripts/build_pkg.py

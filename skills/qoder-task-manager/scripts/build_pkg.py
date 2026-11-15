@@ -9,16 +9,37 @@
 """
 import argparse
 import os
+import re
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # skills/<name>/
 REPO = os.path.dirname(os.path.dirname(ROOT))                        # 仓库根
 NAME = 'qoder-task-manager'
-VERSION = '1.6.0'
+VERSION_FALLBACK = '1.7.0'
+SCRIPT = os.path.join(ROOT, 'scripts', 'qoder_sessions.py')
 
 FILES = ['SKILL.md', 'README.md', 'CHANGELOG.md', 'LICENSE', 'PUBLISHING.md']
 DIRS = ['scripts', 'references', 'examples']
 SKIP_DIRS = {'__pycache__', '.git', 'dist'}
+
+
+def read_version():
+    """版本号单一来源：主脚本的 VERSION 常量。
+
+    只在读不到时才回退 VERSION_FALLBACK，避免三处版本号各自漂移。
+    """
+    try:
+        with open(SCRIPT, encoding='utf-8') as f:
+            text = f.read()
+        m = re.search(r"^VERSION\s*=\s*'([^']+)'", text, re.M)
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return VERSION_FALLBACK
+
+
+VERSION = read_version()
 
 
 def collect():

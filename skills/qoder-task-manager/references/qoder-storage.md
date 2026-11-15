@@ -84,7 +84,7 @@ UPDATE chat_sessions
 1. 目标工作区若已有任务，读取它们的 `workspace.id`，取出现次数最多的那个（同一本地工作区的值稳定）。
 2. 目标工作区是新建的、还没有任何任务时，退回使用工作区 UUID。
 
-原因：本地工作区的 `workspace.id` 形如 `ws_<64 位十六进制>`，由 Qoder 原生层生成。实测 md5 / sha1 / sha256 / sha3_256 / blake2b / blake2s、UTF-8 与 UTF-16LE 编码、大小写/斜杠/尾斜杠/`\\?\` 前缀/JSON 转义等各种归一化组合，**都无法由路径或工作区 UUID 复现该值**，Electron 层（app.asar）中也没有生成代码。因此只能复用或退让，不要臆造。
+原因：本地工作区的 `workspace.id` **实测有两种形态**——多数是 `ws_<64 位十六进制>`（由 Qoder 原生层生成），也有直接等于工作区 UUID 的情况（UNC 路径工作区，如 `\\\\huahua-book\\B\\xxx`，实测就是 UUID）。所以**不要写死成「一定是 ws_ 哈希」**，也不要试图复现。实测 md5 / sha1 / sha256 / sha3_256 / blake2b / blake2s、UTF-8 与 UTF-16LE 编码、大小写/斜杠/尾斜杠/`\\?\` 前缀/JSON 转义等各种归一化组合，都**无法由路径或工作区 UUID 复现 `ws_` 形式的值**，Electron 层（app.asar）中也没有生成代码。因此只能复用它已存在的值或退回 UUID，不要臆造。
 
 ### 新建工作区
 
@@ -138,6 +138,9 @@ PRAGMA integrity_check;
 5. **应用运行中写库**：WAL 允许并发写，但 Qoder 可能用内存缓存回写，导致改动被覆盖。所以写操作要求应用退出。
 6. **同一秒两次备份**：备份文件名含到秒的时间戳，同秒内连续两次写会互相覆盖。批量操作时留意先后顺序，或手工 `backup` 一次作为锚点。
 7. **Python 路径**：Git Bash 的 `/tmp` 在原生 Python 里不成立，脚本参数一律用 `C:\...` 绝对路径。
+8. **整库回滚必须关应用**：`rollback --backup` 是 `shutil.copy2` 直接覆盖文件再删 `-wal/-shm`，不是 WAL 事务，没有 SQLite 的并发保护。Qoder 运行中执行会把库写坏，所以脚本检测到进程就直接拒绝（退出码 3）；`--force-hot` 只是逃生开关。
+9. **retarget 之后要跑 repair**：`workspace retarget` 只改库里的 `cwd`，`projects/` 下的目录名是按**创建时**的 cwd 编码生成的，不会跟着变。改完项目记忆立刻读不到（`doctor --deep` 的「目录一致性」会报不一致），需要接着 `repair` 把文件搬过去。
+10. **改写非 UTF-8 控制台**：Windows 管道默认按 locale（GBK）编码，标题里的 emoji 会让 `print` 抛 `UnicodeEncodeError`。脚本在 `main()` 里把 stdout/stderr 重配成 UTF-8（`errors='replace'`），自己解析输出时也应按 UTF-8 读。
 
 ## 热写与验证（v1.1.0）
 
@@ -157,9 +160,17 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
 <当前工作目录>/qoder-cm-backups/
 └── move-20261115-135526/
     ├── batch.json                 # 本批汇总：每个 item 的 sid/status/manifest
-    └── items/
-        └── chat_sessions-<sid>.json   # 该任务改动前的完整行（所有列）
+    ├── items/
+    │   ├── chat_sessions-<sid>.json   # 该任务改动前的完整行（所有列）
+    │   └── workspaces-<id>.json       # move --create 新建的工作区，带 "op":"insert"
+    └── files/<sid8>/
+        ├── session/<sid>.jsonl        # 任务正文
+        ├── session/<sid>/…            # 附件、子代理目录（整棵复制）
+        ├── memory/…                   # 项目记忆
+        └── output/out/x/log.txt       # 产出：按相对 cwd 的相对路径存放
 ```
+
+**文件按相对路径存放**（v1.7.0）：`files/<sid8>/<bucket>/` 下不再只用 basename，而是保留相对 cwd 的路径，`output/out/x/log.txt` 与 `output/out/y/log.txt` 各存一份，不会互相覆盖。拿不到相对路径时退回 `basename-<绝对路径 sha1 前 8 位>`。目录（session 子目录 / memory）仍按 basename 整棵复制。
 
 `items/*.json` 结构：
 
@@ -168,7 +179,7 @@ Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截
  "key_value":"<sid>","saved_at":1794...,"row":{ ...所有列... }}
 ```
 
-回滚时按 `row` 逐列写回（只写当前表里存在的列），因此**只影响这一行**。
+回滚时按 `row` 逐列写回（只写当前表里存在的列），因此**只影响这一行**。`"op":"insert"` 的条目反过来执行删除（`move --create` 建的工作区回滚后不会残留成孤儿）。
 
 整库快照存在 `<当前工作目录>/qoder-cm-backups/db/main.sqlite.bak-<动作>-<时间戳>`，用于 `workspace delete` / `retarget` / 手动 `backup`，保留最近 10 份。
 

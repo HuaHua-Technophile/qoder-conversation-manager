@@ -5,9 +5,9 @@ summary: 管理 Qoder 桌面端任务与工作区：按完整任务历史重命�
 iconUrl: https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-task-manager@main/skills/qoder-task-manager/assets/icon-qoder-512.png
 category: dev-programming
 name: qoder-task-manager
-description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。支持增量重命名（rename --pending），可挂定时任务每天自动整理，已改过名的任务只要之后又对话过就会重新判断。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检、每天自动重命名、挂个定时任务整理标题」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
-description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。内置增量判定与改名留痕，可直接挂定时任务每天自动整理——已改过名的任务，只要之后又对话过就会重新判断。默认干跑，按对象备份，拒绝影子任务。
-description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, and a 7-point doctor. Ships with incremental rename (--pending) so it can run on a daily schedule: any task that has been talked to again since its last rename is re-evaluated automatically. Dry-run by default with automatic backups.
+description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、体检（七项基础 + 五项深度检查）。支持增量重命名（rename --pending），可挂定时任务每天自动整理，已改过名的任务只要之后又对话过就会重新判断。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检、每天自动重命名、挂个定时任务整理标题」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
+description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、体检（七项基础 + 五项深度检查）。内置增量判定与改名留痕，可直接挂定时任务每天自动整理——已改过名的任务，只要之后又对话过就会重新判断。默认干跑，按对象备份，拒绝影子任务。
+description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, and a doctor with 7 base checks plus 5 deep checks. Ships with incremental rename (--pending) so it can run on a daily schedule: any task that has been talked to again since its last rename is re-evaluated automatically. Dry-run by default with automatic backups.
 display_name: Qoder任务管理
 display_name_zh: Qoder任务管理
 display_name_en: Qoder Task Manager
@@ -22,9 +22,10 @@ examples_en:
   - "Move all NAS-related tasks into the NAS workspace, files included"
   - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.6.0
+version: 1.7.0
 tags: [Qoder, 任务管理, 重命名, 工作区, SQLite, 定时任务, 自动化]
 license: MIT
+homepage: https://github.com/HuaHua-Technophile/qoder-task-manager
 ---
 
 # Qoder 任务管理
@@ -36,7 +37,7 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 
 | 命令 | 用途 | 是否写库 |
 |---|---|---|
-| `doctor` | 七项体检：库、WAL、表结构、进程、工作区路径、影子任务、备份 | 否 |
+| `doctor` | 体检：七项基础（库、WAL、表结构、进程、工作区路径、影子任务、备份），`--deep` 另加五项 | 否 |
 | `list` | 列出任务，支持六维筛选 | 否 |
 | `rename --export` | 导出完整任务历史，供 agent 生成标题（`--pending` 增量） | 否 |
 | `rename --import` | 把 titles.json 写回，并锁定标题来源 | 是 |
@@ -90,20 +91,25 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 python <skill-dir>/scripts/qoder_sessions.py doctor
 ```
 
-七项全 `OK` 说明可用。`Qoder 进程` 只是提示项——运行中也允许热写。
+七项基础全 `OK` 说明可用；加 `--deep` 再查五项（任务文件、目录一致性、项目记忆、产出索引、孤立项目目录），共十二项。`Qoder 进程` 只是提示项——运行中也允许热写。
 
 ## 命令总览
 
 所有命令都支持 `--db <path>`（指向副本做演练）、`--json`（结构化输出）。
 
-写操作默认**允许 Qoder 运行中热写**：写完提示重启应用，让侧栏按数据库重建。需要硬性拦截时加 `--require-closed`（退出码 3）。
+`--json` 的输出契约：**stdout 只有一个 JSON 文档**（对象或数组），人类可读提示全部静音，`[WARN]`/`[NOTE]` 收进 `warnings` 字段（数组型结果如 `list` 打到 stderr）。**空结果也是合法 JSON**，例如 `move` 无可迁移任务输出 `{"target": {...}, "plan": [], "applied": false, ...}`；出错时输出 `{"error": "...", "exit": 2}`。所以 `... --json | python -c "import json,sys;json.load(sys.stdin)"` 永远能过。
+
+写操作默认**允许 Qoder 运行中热写**：写完提示重启应用，让侧栏按数据库重建。需要硬性拦截时加 `--require-closed`（退出码 3）。唯一的例外是整库覆盖（`rollback --backup`）：它直接覆盖文件、不是 WAL 事务，Qoder 运行中一律拒绝，需退出应用（或用 `--force-hot` 显式越权）。
 
 ### doctor
 
 ```bash
 python <skill>/scripts/qoder_sessions.py doctor
+python <skill>/scripts/qoder_sessions.py doctor --deep        # 加查文件/目录/记忆/产出/孤立项目目录
 python <skill>/scripts/qoder_sessions.py doctor --json
 ```
+
+七项基础 + 五项深度检查。`备份` 项在「最近备份超过 14 天」时标 `!!`（从未备份只提示、不判失败——首次写入会自动建备份）；`--deep` 的 `孤立项目目录` 项会在 `projects/` 下存在无 jsonl 的空目录时标 `!!`。
 
 退出码：0 全绿；1 有告警项。
 
@@ -118,7 +124,9 @@ python <skill>/scripts/qoder_sessions.py list --since 2026-11-01 --limit 20
 
 筛选维度：`--workspace`（名/路径/UUID）、`--cwd`、`--keyword`、`--filter`、`--since`、`--include-deleted` / `--include-peer`、`--limit`。
 
-`--filter` 是受限表达式，只支持 `and` 连接与 `contains / like / startswith / endswith / = / !=`，字段限 `title / cwd / workspace / id / status`。**不是 SQL**，不要写子查询。
+`--filter` 是受限表达式，只支持 `and` 连接与 `contains / like / startswith / endswith / = / !=`，字段限 `title / cwd / workspace / id / status`。**不是 SQL**，不要写子查询；**不支持 `or`、括号、`not` 与 `> < >= <=`**——写了会直接报错（退出码 2）并说明支持的语法，而不是静默返回空集。
+
+`list` 默认不显示影子任务。末尾会提示「另有 N 条影子任务未显示，加 `--include-peer` 查看」——N 是**当前筛选范围里**被默认隐藏的影子行数（在 `--limit` 之前统计，加了 `--workspace`/`--keyword`/`--filter` 就只数该范围内的），不会让你误以为数据丢了，也不会把「被筛掉的本地任务」错算成影子。
 
 ### rename（两步式）
 
@@ -176,13 +184,13 @@ python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply \
   --min-title-len 12 --max-title-len 30 --require-prefix                                      # 带长度与前缀约束
 ```
 
-标题规则：`[短分类] 标题`，短类 2–4 个汉字；不传 `--min-title-len` / `--max-title-len` 时默认按 **20–30 字符**（含前缀和空格）校验。
+标题规则：`[短分类] 标题`，短类 2–4 个汉字；不传 `--min-title-len` / `--max-title-len` 时默认按 **12–30 字符**（含 `[分类] ` 前缀与空格）校验——即正文 8–22 个汉字，加上前缀正好落在区间内。
 
-校验规则：非空、长度落在 `--min-title-len` / `--max-title-len`（默认 20–30，不传参数即按此校验）、不含引号/书名号/句号/问号/控制字符/路径分隔符；`--require-prefix` 时校验 `^\[[^\[\]]{1,8}\]\s+\S`。**允许不同任务重名**，不去重。
+校验规则：非空、长度落在 `--min-title-len` / `--max-title-len`（默认 12–30 字符，不传参数即按此校验）、不含引号/书名号/句号/问号/控制字符/路径分隔符；`--require-prefix` 时校验 `^\[[^\[\]]{1,8}\]\s+\S`。**允许不同任务重名**，不去重。
 
 **分类约定**：短类 2–4 个汉字，全库收敛在 8–12 个（如 系统/网络/开发/数据/硬件/办公/生活/其他）。前缀计入长度。
 
-**标题怎么写**：必须读完整任务再定名，不要只看开头。判断真实主线——用户最初想做什么 → 中途遇到什么 → 最后实际交付什么；中途转向时以占篇幅最大或最终解决的那条命名。长度 8–22 个汉字，技术名词保留原文并与中文之间加半角空格。详见 `references/subagent-playbook.md`。
+**标题怎么写**：必须读完整任务再定名，不要只看开头。判断真实主线——用户最初想做什么 → 中途遇到什么 → 最后实际交付什么；中途转向时以占篇幅最大或最终解决的那条命名。正文 8–22 个汉字（含 `[分类] ` 合计 12–30 字符），技术名词保留原文并与中文之间加半角空格。详见 `references/subagent-playbook.md`。
 
 ### move
 
@@ -217,11 +225,13 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 - 无工作区 → 工作区 A：`workspace_id` 为空的任务同样按 `cwd` 归位，产出照搬；
 - 工作区 A → 移出（变回无工作区）：暂不支持，`move` 必须给 `--to`。
 
-搬空的源项目目录默认自动删除（`--keep-orphans` 可保留），避免 `projects/` 下堆一堆没有任务的空目录。
+搬空的源项目目录默认自动删除（`--keep-orphans` 可保留），避免 `projects/` 下堆一堆没有任务的空目录。清单取的是**搬之前**的项目目录快照，所以「这个目录被搬空了」判断是准的（实测：搬走最后一条任务后目录被删，删除记录写进 `batch.json` 的 `removed_dirs`）。
 
 目标不存在时加 `--create`：按 `--to` 的**绝对路径**建工作区，名称默认取路径末段（`--name` 可改）。目录必须已存在，否则要再加 `--allow-missing`。干跑时只提示、不建行。
 
-已在目标工作区的任务自动跳过；`--ids` 里匹配不到的 ID 会告警。每条任务独立事务，文件搬运失败会把已搬的文件放回原位；记忆合并不可逆，回滚时只提示需人工核对。
+已在目标工作区的任务自动跳过（`--no-skip-in-target` 可关掉，用来只补搬文件）；`--ids` 里匹配不到的 ID 会告警。每条任务独立事务，文件搬运失败会把已搬的文件放回原位；记忆合并不可逆，回滚时只提示需人工核对。
+
+产出与记忆的搬运结果会按「新增 / 合并 / 跳过」三项分开报（首次迁移复制了几个文件也看得见），完整报告同时写进 `batch.json` 的 `memory_report`。
 
 落盘时**每条任务一个独立事务**：某条失败只标记 `[FAIL]`，其余继续。写完逐条回读三处字段并打 `[OK]` / `[WARN]`，最后输出成功/失败计数与备份组路径。
 
@@ -258,8 +268,9 @@ python <skill>/scripts/qoder_sessions.py workspace delete --name VMs --yes --app
 ```
 
 - `new`：只查**本地**同名工作区；同名已存在则列出并停止，不新建（后续用 `move --to` 归入即可）。目录是否存在只做提示，**由 agent 判断要不要建目录**，脚本不自动创建；目录缺失时需 `--allow-missing` 才继续。
-- `retarget`：改根路径并**强制级联**更新该工作区所有任务的 `cwd` 与执行目标（影子任务跳过）。
+- `retarget`：改根路径并**强制级联**更新该工作区所有任务的 `cwd` 与执行目标（影子任务跳过）。注意它**只改库里的 `cwd`，不搬 `projects/` 下的项目目录**——目录名是按创建时的 cwd 编码生成的，所以改完之后项目记忆立刻读不到（`doctor --deep` 的「目录一致性」也会报）。要恢复记忆就接着跑 `repair`（先干跑看清单）。
 - `delete`：软删除工作区 + 其下全部任务（写 `deleted_at`，进 Qoder 回收站，可恢复）。必须 `--yes`。
+- `list` 会多一列「设备」：本地显示 `本机`，对端投影显示设备 ID 前 8 位（如 `f659e85d`），这样同名工作区（本地一份 + 各对端各一份）能区分开。
 
 ### backup / rollback
 
@@ -279,6 +290,7 @@ python <skill>/scripts/qoder_sessions.py rollback --backup ./qoder-cm-backups/db
 - `rename` / `move` 每次落盘会在**当前工作目录**新建一组 `qoder-cm-backups/<动作>-<时间戳>/`：`items/` 下每条任务一份完整行，`batch.json` 汇总。**单条回滚只动那一行**，不影响同批其他任务。
 - `backup` / `workspace delete` / `workspace retarget` / `rollback --backup` 用整库快照，存在 `./qoder-cm-backups/db/`，保留最近 10 份。
 - `rollback --backup` 会先把当前库另存为 `bak-pre-rollback-*` 再覆盖。
+- **整库覆盖必须完全退出 Qoder**：它是直接 `copy2` 覆盖文件 + 删 `-wal/-shm`，不是 WAL 事务，应用在跑时会把库写坏。检测到 Qoder 进程会直接拒绝（退出码 3），确要越权加 `--force-hot`。
 - 备份根目录可用 `--backup-dir` 或环境变量 `QODER_CM_BACKUP_DIR` 改到别处；根目录自带 `.gitignore`（内容为 `*`），不会被 git 提交。
 
 ## 典型工作流
@@ -300,9 +312,9 @@ python <skill>/scripts/qoder_sessions.py doctor --json
 python <skill>/scripts/qoder_sessions.py rename --export --pending --out ./auto/$(date +%Y%m%d-%H%M)
 # agent 读 ./auto/<时间戳>/*.txt，产出 titles.json（必须读完整个任务再定名）
 python <skill>/scripts/qoder_sessions.py rename --import ./auto/<时间戳>/titles.json \
-  --require-prefix --min-title-len 20 --max-title-len 30            # 干跑校验
+  --require-prefix                                                    # 干跑校验（长度用默认 12–30 字符）
 python <skill>/scripts/qoder_sessions.py rename --import ./auto/<时间戳>/titles.json \
-  --require-prefix --min-title-len 20 --max-title-len 30 --apply    # 落盘
+  --require-prefix --apply                                            # 落盘
 ```
 
 注意：Qoder 侧栏要重启才显示新标题；定时任务里**只提示、不自动重启 Qoder**。
@@ -310,7 +322,7 @@ python <skill>/scripts/qoder_sessions.py rename --import ./auto/<时间戳>/titl
 **按主题给任务归类到工作区**
 
 ```bash
-python <skill>/scripts/qoder_sessions.py list --include-peer=false
+python <skill>/scripts/qoder_sessions.py list --include-peer
 python <skill>/scripts/qoder_sessions.py move --to Cross-Platform --filter "cwd contains NAS"
 # 看清单无误后加 --apply
 ```
@@ -332,29 +344,34 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 4. **每条独立事务**：批量操作某条失败只影响它自己，其余继续；结束后按成功/失败计数返回退出码。
 5. **无归属任务不动**：`workspace_id` 为空的任务默认留在原处，不主动整理、不询问用户要不要归类；只有用户明确点名要迁移时才处理。
 6. **破坏性操作仍做整库快照**（`./qoder-cm-backups/db/`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
-6. **影子任务一律拒绝**改名与迁移，并在输出里说明原因。这是 Qoder 特有的数据形态——`peerOriginSessionId` 非空的任务正文在另一台设备，本机只有元数据，改了会被同步覆盖。
-7. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
-8. **搬文件前先备份**：任务文件、子目录、记忆、产出在移动前都会复制到备份组的 `files/<sid>/` 下。
-9. **产出旧路径留链接**：优先硬链接，跨盘失败退回复制；两者都失败时只在清单里记 `link:false`，不中断迁移。
-8. **删除只做软删除**（进回收站），且必须 `--yes`。
-9. **只改元数据**，不碰 `chat_session_messages` 正文与搜索索引。
-10. **副本演练**：给 `--db` 指向副本时，与真库互不影响，可放心跑全套写操作。
+7. **整库覆盖必须关应用**：`rollback --backup` 直接覆盖文件、不是 WAL 事务，检测到 Qoder 进程一律拒绝（退出码 3）；`--force-hot` 才放行，并打印风险提示。
+8. **影子任务一律拒绝**改名与迁移，并在输出里说明原因。这是 Qoder 特有的数据形态——`peerOriginSessionId` 非空的任务正文在另一台设备，本机只有元数据，改了会被同步覆盖。
+9. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
+10. **搬文件前先备份**：任务文件、子目录、记忆、产出在移动前都会复制到备份组的 `files/<sid8>/` 下；文件按**相对路径**存放（`files/<sid8>/output/out/x/log.txt`），不同子目录的同名文件不会互相覆盖。
+11. **产出旧路径留链接**：优先硬链接，跨盘失败退回复制；两者都失败时只在清单里记 `link:false`，不中断迁移。
+12. **删除只做软删除**（进回收站），且必须 `--yes`。
+13. **只改元数据**，不碰 `chat_session_messages` 正文与搜索索引。
+14. **副本演练**：给 `--db` 指向副本时，与真库互不影响，可放心跑全套写操作。
 
-退出码：`0` 全部成功；`1` 有失败或 doctor 有告警；`2` 参数/选择/目标错误或缺少确认；`3` 指定了 `--require-closed` 且 Qoder 在运行。
+退出码：`0` 全部成功；`1` 有失败或 doctor 有告警；`2` 参数/选择/目标错误或缺少确认；`3` 指定了 `--require-closed` 且 Qoder 在运行，或整库覆盖时 Qoder 在运行。
 
 ## 常见错误
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 写完标题没变 | 应用还在用旧缓存 | 重启 Qoder；仍不变则查 `titleSource` 是否为 `custom` |
-| `目标工作区名不唯一` | 存在同名本地/对端工作区 | 用 `workspace list` 查 UUID，`--to <UUID>` |
+| `目标工作区名不唯一` | 存在同名本地/对端工作区 | 用 `workspace list` 查 UUID（「设备」列区分是哪台），`--to <UUID>` |
 | 迁完侧栏没变 | 应用未重启 | 重启 Qoder |
 | 迁移后新项目读不到旧记忆 | 只用了 `--metadata-only`，记忆没搬 | 去掉该参数重跑，或手工合并 `projects/*/memory/` |
 | 产出旧路径打不开 | 硬链接与复制都失败（如跨盘且无权限） | 看清单里的 `link` 字段，手工补链接或复制 |
 | `--qoder-home` 指错 | 沙箱演练时未指向副本 | 确认指向含 `projects/` 的根目录 |
 | 迁完发现目录还在旧位置 | 早先只改了数据库 | 跑 `repair`（先干跑看清单） |
+| `workspace retarget` 之后项目记忆读不到 | retarget 只改库里的 `cwd`，项目目录还在旧编码下 | 接着跑 `repair`（先干跑看清单）；`doctor --deep` 的「目录一致性」会报 |
+| `rollback --backup` 被拒（退出码 3） | 整库覆盖不能热写 | 完全退出 Qoder 再跑；确要越权加 `--force-hot` |
 | `repair` 说「共用目录，未搬」 | 源项目还有其他任务 | 正常；该记忆属于原项目，需要时手工合并 |
 | 改完标题又变回去 | 只改了 `title`，没锁 `titleSource` | 用本技能 `rename --import`（会自动锁定） |
+| 标题被拒「过短/过长」 | 长度按**字符**算，含 `[分类] ` 前缀 | 正文 8–22 汉字，合计 12–30 字符；确实要放宽用 `--min-title-len` / `--max-title-len` |
+| `--filter` 报「不支持的语法」 | 表达式里写了 `or` / 括号 / `not` / `>` 之类 | 只用 `and` 连接，条件限 contains/like/startswith/endswith/=/!= |
 | `未找到 Qoder 数据库` | 非默认安装位置 | `--db` 指定 `main.sqlite` |
 | 迁移后执行目录不对 | `execution_target_json` 未同步 | 本技能会三处同改；手工改库容易漏 |
 | 想改的任务被判定为影子 | 该任务属于另一台设备 | 到那台设备上执行，或在 Qoder 里确认归属 |
