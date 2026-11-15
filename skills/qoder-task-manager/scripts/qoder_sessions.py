@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.4.1'
+VERSION = '1.4.2'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础

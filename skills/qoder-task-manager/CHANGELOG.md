@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.4.2 — 2026-11-15
+
+用打过补丁的 CLI 重发，让分类与图标真正落到条目上。
+
+- 根因：CI 里调用的是**官方 `skillhub publish`**，它只传 slug/version/displayName/summary/description/tags/license/homepage/changelog，**不传 `category` 和 `iconUrl`**。本地那份 CLI 之前打过补丁，所以本地发有效、CI 发无效。
+- 1.4.1 因此仍然「未分类」且无图标。本版改用本地补丁版 CLI 发布。
+- 功能无变化。
+
 ## 1.4.1 — 2026-11-15
 
 补写 SkillHub 分类与图标。
