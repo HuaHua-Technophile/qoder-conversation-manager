@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 1.1.0 — 2026-11-15
+
+向本机的 WorkBuddy 侧技能（`workbuddy-move-conversation`）对齐六项工程能力。
+
+### 变更
+
+- **按对象备份 + 单条回滚（对齐 1）**：`rename` / `move` 每次落盘新建 `qoder-cm-backups/<动作>-<时间戳>/`，`items/` 下每条会话一份完整行，`batch.json` 汇总。新增 `rollback --manifest`（只回滚一条）与 `rollback --batch`（回滚整批）。整库快照仍用于破坏性操作。
+- **每条独立事务 + 失败隔离（对齐 2）**：批量写不再整批一个事务；单条失败只标记 `[FAIL]` 并继续，结束后返回成功/失败计数（有失败时退出码 1）。
+- **允许热写（对齐 3）**：Qoder 运行中不再直接拒绝写入，改为 `[WARN]` 提示并继续；写完提示重启应用做重建验证。需要旧行为时加 `--require-closed`（退出码 3）。`doctor` 的进程检查改为提示项，不再计为异常。
+- **LPT 均衡分片（对齐 7）**：`rename --export --shards N` 按字数用最长优先算法切片，输出 `shards/groupN.json`，供子智能体并行；`index.json` 增加 `chars` 字段。
+- **分类维度（对齐 8）**：`titles.json` 支持 `category` 字段，自动补成 `[分类] 标题`；新增 `--require-prefix`、`--min-title-len`、`--max-title-len`。
+- **允许重名（对齐 9）**：移除重复标题告警，不同会话可同名。
+
+### 其它
+
+- `--ids` 中匹配不到的 ID 会输出 `[WARN]`，不再静默忽略。
+- `--force` 参数移除，由 `--require-closed` 取代。
+- 文档订正：影子会话拒绝是 **Qoder 数据形态特有**的必要防护（对端会话正文不在本机），不作为与其他技能的优劣比较项。
+
 ## 1.0.0 — 2026-11-15
 
 首个版本。把「重命名会话 / 迁移会话 / 管理工作区」三件事打包成一个跨 Harness 技能，操作对象为 Qoder 本地数据。

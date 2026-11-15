@@ -138,3 +138,44 @@ PRAGMA integrity_check;
 5. **应用运行中写库**：WAL 允许并发写，但 Qoder 可能用内存缓存回写，导致改动被覆盖。所以写操作要求应用退出。
 6. **同一秒两次备份**：备份文件名含到秒的时间戳，同秒内连续两次写会互相覆盖。批量操作时留意先后顺序，或手工 `backup` 一次作为锚点。
 7. **Python 路径**：Git Bash 的 `/tmp` 在原生 Python 里不成立，脚本参数一律用 `C:\...` 绝对路径。
+
+## 热写与验证（v1.1.0）
+
+Qoder 用 WAL 模式，允许在应用运行时写入。技能默认不再拦截，只打 `[WARN]`：
+
+1. 写库（每条会话独立事务，失败隔离）。
+2. 立即回读三处字段（`workspace_id` / `cwd` / `execution_target_json.workspace.path`）或（`title` / `extra_json.titleSource`）校验。
+3. 提示用户重启 Qoder，让侧栏按数据库重建。
+
+实测：应用运行中写入后**没有被内存缓存覆盖**——重启后标题与归属都保持。但仍建议重启后核对一次；若回退，用对应备份组回滚。
+
+需要旧行为（运行中直接拒绝）时加 `--require-closed`，退出码 3。
+
+## 备份布局（v1.1.0）
+
+```
+<db 同目录>/qoder-cm-backups/
+└── move-20261115-135526/
+    ├── batch.json                 # 本批汇总：每个 item 的 sid/status/manifest
+    └── items/
+        └── chat_sessions-<sid>.json   # 该会话改动前的完整行（所有列）
+```
+
+`items/*.json` 结构：
+
+```json
+{"version":1,"table":"chat_sessions","key_column":"session_id",
+ "key_value":"<sid>","saved_at":1794...,"row":{ ...所有列... }}
+```
+
+回滚时按 `row` 逐列写回（只写当前表里存在的列），因此**只影响这一行**。
+
+整库快照仍是 `main.sqlite.bak-<动作>-<时间戳>`，用于 `workspace delete` / `retarget` / 手动 `backup`，保留最近 10 份。
+
+`rollback` 三种形态：
+
+| 参数 | 作用 |
+|---|---|
+| `--manifest <items/xxx.json>` | 只恢复一条会话 |
+| `--batch <batch.json>` | 恢复该批全部条目 |
+| `--backup <main.sqlite.bak-*>` | 整库覆盖（先另存 pre-rollback） |

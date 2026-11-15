@@ -18,7 +18,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -90,18 +90,32 @@ def qoder_running():
         return 0
 
 
-CUSTOM_DB = False   # --db 指向非默认库（副本）时为 True，此时不要求 Qoder 退出
+CUSTOM_DB = False   # --db 指向非默认库（副本）时为 True
 
 
-def require_closed(force=False):
+def gate_running(require_closed_flag=False):
+    """写前闸门。
+
+    默认允许热写：Qoder 运行时不阻断，写完提示重启让侧栏按数据库重建。
+    传 --require-closed 时恢复硬性拦截（退出码 3）。
+    """
     if CUSTOM_DB:
         return
     n = qoder_running()
-    if n and not force:
-        die(f'检测到 {n} 个 Qoder 进程在运行。请完全退出 Qoder 后重试，'
-            f'或确认风险后加 --force。', 3)
-    if n and force:
-        out(f'[WARN] Qoder 仍在运行（{n} 个进程），按 --force 继续写入。')
+    if not n:
+        return
+    if require_closed_flag:
+        die(f'检测到 {n} 个 Qoder 进程在运行，且指定了 --require-closed。'
+            f'请完全退出 Qoder 后重试。', 3)
+    out(f'[WARN] Qoder 正在运行（{n} 个进程）。按热写继续；完成后请重启 Qoder 验证。')
+
+
+def post_write_hint(what='写入'):
+    if CUSTOM_DB:
+        return
+    out('')
+    out(f'提示：{what}已落盘。请重启 Qoder 让侧栏按数据库重建，'
+        f'然后核对标题/归属是否保持；若回退，用 rollback 恢复。')
 
 
 # ---------------------------------------------------------------- 数据访问
@@ -349,6 +363,77 @@ def prune_backups(db_path, keep=BACKUP_KEEP):
             pass
 
 
+# ------------------------------------------------ 按对象备份（manifest 可单条回滚）
+
+def backup_sets(db_path):
+    root = os.path.join(os.path.dirname(db_path), 'qoder-cm-backups')
+    if not os.path.isdir(root):
+        return []
+    return sorted((os.path.join(root, d) for d in os.listdir(root)
+                   if os.path.isdir(os.path.join(root, d))),
+                  key=os.path.getmtime, reverse=True)
+
+
+def new_backup_set(db_path, tag):
+    root = os.path.join(os.path.dirname(db_path), 'qoder-cm-backups')
+    base = os.path.join(root, f'{tag}-{time.strftime("%Y%m%d-%H%M%S")}')
+    n = 1
+    while os.path.exists(base):
+        base = os.path.join(root, f'{tag}-{time.strftime("%Y%m%d-%H%M%S")}-{n}')
+        n += 1
+    os.makedirs(os.path.join(base, 'items'), exist_ok=True)
+    return base
+
+
+def backup_row(con, table, key_col, key_value, base):
+    """把一行完整存成 JSON；返回 manifest 路径。"""
+    try:
+        row = con.execute(f'select * from {table} where {key_col}=?', (key_value,)).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    payload = {
+        'version': 1,
+        'table': table,
+        'key_column': key_col,
+        'key_value': key_value,
+        'saved_at': int(time.time() * 1000),
+        'row': {k: row[k] for k in row.keys()},
+    }
+    path = os.path.join(base, 'items', f'{table}-{key_value}.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def write_batch_manifest(base, items, note=''):
+    payload = {
+        'version': 1,
+        'created_at': datetime.now().isoformat(timespec='seconds'),
+        'note': note,
+        'items': items,
+    }
+    path = os.path.join(base, 'batch.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def restore_row(w, payload):
+    """按 manifest 里的一行恢复；只写回存在的列。"""
+    table = payload['table']
+    key_col = payload['key_column']
+    row = payload['row']
+    have = set(table_columns(w, table))
+    cols = [c for c in row if c != key_col and c in have]
+    if not cols:
+        return 0
+    sql = f'update {table} set ' + ', '.join(f'{c}=?' for c in cols) + f' where {key_col}=?'
+    cur = w.execute(sql, [row[c] for c in cols] + [payload['key_value']])
+    return cur.rowcount
+
+
 # ---------------------------------------------------------------- doctor
 
 CHECK_NAMES = ['数据库', 'WAL 状态', '表结构', 'Qoder 进程', '工作区路径', '影子会话', '备份']
@@ -387,9 +472,10 @@ def cmd_doctor(args, con, db_path):
                 missing.append(f'{tbl}.{c}')
     add('表结构', not missing, '必需字段齐全' if not missing else '缺失: ' + ', '.join(missing[:6]))
 
-    # 4 进程
+    # 4 进程（热写允许，仅作提示，不计为异常）
     n = qoder_running()
-    add('Qoder 进程', n == 0, '未运行，可安全写入' if n == 0 else f'{n} 个进程，写操作会被拒绝')
+    add('Qoder 进程', True,
+        '未运行' if n == 0 else f'{n} 个进程（允许热写；写完请重启 Qoder 验证）')
 
     # 5 工作区路径
     ws = load_workspaces(con)
@@ -502,17 +588,21 @@ def cmd_list(args, con, db_path):
 FORBIDDEN = set('"“”\'‘’《》<>。？?！!\n\r\t/\\|')
 
 
-def validate_title(t):
+def validate_title(t, min_len=2, max_len=40, require_prefix=False):
     t = (t or '').strip()
     errs = []
     if not t:
         errs.append('空标题')
     if any(c in FORBIDDEN for c in t):
         errs.append('含非法字符（引号/书名号/句号/问号/换行/路径分隔符）')
-    if len(t) > 40:
-        errs.append(f'过长（{len(t)} 字符）')
-    if len(t) < 2:
-        errs.append('过短')
+    if any(ord(c) < 32 for c in t):
+        errs.append('含控制字符')
+    if len(t) > max_len:
+        errs.append(f'过长（{len(t)} > {max_len} 字符）')
+    if len(t) < min_len:
+        errs.append(f'过短（{len(t)} < {min_len} 字符）')
+    if require_prefix and not re.match(r'^\[[^\[\]\r\n]{1,8}\]\s+\S', t):
+        errs.append('缺少 [短分类] 前缀')
     return t, errs
 
 
@@ -578,6 +668,37 @@ def cap(t, n):
     return f'{head}\n…〔中间省略 {len(t)-n} 字〕…\n{tail}'
 
 
+def write_shards(outdir, index, n):
+    """LPT（最长处理时间优先）按字数把会话均衡分到 n 片，供子智能体并行。"""
+    items = sorted(index, key=lambda x: -int(x.get('chars') or 0))
+    bins = [[] for _ in range(n)]
+    tot = [0] * n
+    for it in items:
+        j = min(range(n), key=lambda k: tot[k])
+        bins[j].append(it)
+        tot[j] += int(it.get('chars') or 0)
+
+    sdir = os.path.join(outdir, 'shards')
+    os.makedirs(sdir, exist_ok=True)
+    info = []
+    for i, bucket in enumerate(bins, 1):
+        if not bucket:
+            continue
+        name = f'group{i}'
+        payload = {
+            'group': name,
+            'count': len(bucket),
+            'chars': tot[i - 1],
+            'items': [{'sid': x['sid'], 'short': x['short'], 'title': x['title'],
+                       'chars': x.get('chars'), 'file': x.get('file')} for x in bucket],
+        }
+        path = os.path.join(sdir, name + '.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        info.append({'group': name, 'count': len(bucket), 'chars': tot[i - 1], 'path': path})
+    return info
+
+
 def cmd_rename(args, con, db_path):
     if args.export:
         return rename_export(args, con, db_path)
@@ -593,6 +714,9 @@ def rename_export(args, con, db_path):
 
     if args.ids:
         want = {s.strip() for s in args.ids.split(',') if s.strip()}
+        missing = [w for w in want if not any(r['session_id'].startswith(w) for r in rows)]
+        if missing:
+            out(f"[WARN] 这些 ID 未匹配到会话：{', '.join(missing)}")
         rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
     for r in rows:
         w = ws_map.get(r['workspace_id'])
@@ -628,21 +752,33 @@ def rename_export(args, con, db_path):
             render_transcript(con, r['session_id'], args.user_cap, args.assist_cap),
         ]
         path = os.path.join(outdir, r['session_id'][:8] + '.txt')
+        text = '\n'.join(body)
         with open(path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(body))
+            f.write(text)
         index.append({'sid': r['session_id'], 'short': r['session_id'][:8],
                       'title': (r['title'] or '').strip(), 'title_source': e.get('titleSource'),
                       'workspace': r['_ws_name'], 'messages': msgs, 'user_turns': users,
-                      'bytes': os.path.getsize(path)})
+                      'bytes': os.path.getsize(path), 'chars': len(text),
+                      'file': os.path.basename(path)})
 
     with open(os.path.join(outdir, 'index.json'), 'w', encoding='utf-8') as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
 
+    shard_info = []
+    if getattr(args, 'shards', 0) and len(index) > 1:
+        shard_info = write_shards(outdir, index, max(1, args.shards))
+
     if args.json:
-        print(json.dumps({'out_dir': outdir, 'count': len(index), 'items': index}, ensure_ascii=False, indent=2))
+        print(json.dumps({'out_dir': outdir, 'count': len(index), 'items': index,
+                          'shards': shard_info}, ensure_ascii=False, indent=2))
         return 0
     out(f'已导出 {len(index)} 个会话的完整历史 -> {outdir}')
     out(f'索引文件: {os.path.join(outdir, "index.json")}')
+    if shard_info:
+        out('')
+        out(f'已按字数均衡切成 {len(shard_info)} 片（LPT）：')
+        for s in shard_info:
+            out(f"  {s['group']:<18} {s['count']:>3} 条  {s['chars']:>9,} 字  {s['path']}")
     out('')
     out('下一步：让 agent 读这些 .txt，生成 titles.json（[{"sid": "...", "new_title": "..."}]），')
     out('然后用 rename --import titles.json --apply 写回。')
@@ -689,7 +825,17 @@ def rename_apply(args, con, db_path):
         if row['deleted_at']:
             skipped.append((sid[:8], '会话已删除，已跳过', ''))
             continue
-        title, errs = validate_title(it.get('new_title'))
+        raw_title = it.get('new_title')
+        cat = str(it.get('category') or '').strip()
+        composed = (raw_title or '').strip()
+        if cat and not re.match(r'^\[[^\[\]]{1,8}\]', composed):
+            composed = f'[{cat}] {composed}'
+        title, errs = validate_title(
+            composed,
+            min_len=getattr(args, 'min_title_len', 2),
+            max_len=getattr(args, 'max_title_len', 40),
+            require_prefix=getattr(args, 'require_prefix', False),
+        )
         if errs:
             skipped.append((sid[:8], '；'.join(errs), title))
             continue
@@ -698,23 +844,17 @@ def rename_apply(args, con, db_path):
             continue
         plan.append((row['session_id'], row['title'], title))
 
-    dup = {}
-    for _, _, t in plan:
-        dup[t] = dup.get(t, 0) + 1
+    # 允许不同会话重名，与 WorkBuddy 侧技能保持一致，不再去重告警
 
     if args.json:
         print(json.dumps({'plan': [{'sid': s, 'old': o, 'new': n} for s, o, n in plan],
-                          'skipped': [{'sid': s, 'reason': r} for s, r, _ in skipped],
-                          'duplicates': [k for k, v in dup.items() if v > 1]},
+                          'skipped': [{'sid': s, 'reason': r} for s, r, _ in skipped]},
                          ensure_ascii=False, indent=2))
         if not args.apply_flag:
             return 0
 
     if not args.json:
         out(f'待写入 {len(plan)} 条，跳过 {len(skipped)} 条')
-        if any(v > 1 for v in dup.values()):
-            out('')
-            out('[WARN] 存在重复标题：' + '、'.join(k for k, v in dup.items() if v > 1))
         out('')
         for sid, old, new in plan:
             out(f'  {sid[:8]}  旧: {(old or "")[:40]}')
@@ -730,25 +870,57 @@ def rename_apply(args, con, db_path):
         out('[DRY-RUN] 未写入。确认后加 --apply 落盘。')
         return 0
 
-    require_closed(args.force)
-    bk = make_backup(db_path, 'rename')
-    out(f'已备份: {os.path.basename(bk)}')
+    gate_running(getattr(args, 'require_closed', False))
+
+    base = new_backup_set(db_path, 'rename')
+    manifests = {}
+    for sid, _, _ in plan:
+        mp = backup_row(con, 'chat_sessions', 'session_id', sid, base)
+        if mp:
+            manifests[sid] = os.path.basename(mp)
 
     w = connect(db_path, write=True)
+    results = []
     try:
-        with w:
-            for sid, _, new in plan:
-                row = w.execute('select extra_json from chat_sessions where session_id=?', (sid,)).fetchone()
-                e = load_json(row['extra_json'] if row else '{}')
-                e['titleResolved'] = True
-                e['titleSource'] = 'custom'
-                e['titleRevision'] = int(e.get('titleRevision') or 0) + 1
-                w.execute('update chat_sessions set title=?, extra_json=? where session_id=?',
-                          (new, json.dumps(e, ensure_ascii=False, separators=(',', ':')), sid))
+        for sid, old, new in plan:
+            try:
+                with w:   # 每条独立事务
+                    row = w.execute('select extra_json from chat_sessions where session_id=?', (sid,)).fetchone()
+                    e = load_json(row['extra_json'] if row else '{}')
+                    e['titleResolved'] = True
+                    e['titleSource'] = 'custom'
+                    e['titleRevision'] = int(e.get('titleRevision') or 0) + 1
+                    w.execute('update chat_sessions set title=?, extra_json=? where session_id=?',
+                              (new, json.dumps(e, ensure_ascii=False, separators=(',', ':')), sid))
+                chk = w.execute('select title, extra_json from chat_sessions where session_id=?',
+                                (sid,)).fetchone()
+                meta = load_json(chk['extra_json']) if chk else {}
+                ok = bool(chk) and chk['title'] == new and \
+                    meta.get('titleSource') == 'custom' and meta.get('titleResolved') is True
+                results.append({'session_id': sid, 'old_title': old, 'title': new,
+                                'status': 'ok' if ok else 'verify_failed',
+                                'manifest': manifests.get(sid)})
+                out(f"[{'OK' if ok else 'WARN'}] {sid[:8]}  {new}")
+            except Exception as ex:
+                results.append({'session_id': sid, 'old_title': old, 'title': new,
+                                'status': 'failed', 'error': str(ex),
+                                'manifest': manifests.get(sid)})
+                out(f'[FAIL] {sid[:8]}  {ex}')
     finally:
         w.close()
-    out(f'已写入 {len(plan)} 条标题')
-    return 0
+
+    batch = write_batch_manifest(base, results, note='rename')
+    ok_n = sum(1 for x in results if x['status'] == 'ok')
+    bad_n = len(results) - ok_n
+    out('')
+    out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
+    out(f'备份与清单: {base}')
+    out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
+    out(f'整批回滚: rollback --batch "{batch}"')
+    post_write_hint('标题')
+    if args.json:
+        print(json.dumps({'backup': base, 'results': results}, ensure_ascii=False, indent=2))
+    return 0 if bad_n == 0 else 1
 
 
 # ---------------------------------------------------------------- move
@@ -786,6 +958,9 @@ def cmd_move(args, con, db_path):
 
     if args.ids:
         want = [s.strip() for s in args.ids.split(',') if s.strip()]
+        missing = [w for w in want if not any(r['session_id'].startswith(w) for r in rows)]
+        if missing:
+            out(f"[WARN] 这些 ID 未匹配到会话：{', '.join(missing)}")
         rows = [r for r in rows if any(r['session_id'].startswith(w) for w in want)]
     if args.filter:
         try:
@@ -820,24 +995,59 @@ def cmd_move(args, con, db_path):
         out('[DRY-RUN] 未写入。加 --apply 执行。')
         return 0
 
-    require_closed(args.force)
-    bk = make_backup(db_path, 'move')
-    out(f'已备份: {os.path.basename(bk)}')
+    gate_running(getattr(args, 'require_closed', False))
+
+    # 按对象备份：每条会话存一份完整行，可单条回滚
+    base = new_backup_set(db_path, 'move')
+    manifests = {}
+    for r in plan:
+        mp = backup_row(con, 'chat_sessions', 'session_id', r['session_id'], base)
+        if mp:
+            manifests[r['session_id']] = os.path.basename(mp)
 
     et = {'mode': 'local',
           'host': {'id': 'local', 'kind': 'local', 'label': 'Local'},
           'workspace': {'id': et_id, 'path': root}}
     et_json = json.dumps(et, ensure_ascii=False, separators=(',', ':'))
+
     w = connect(db_path, write=True)
+    results = []
     try:
-        with w:
-            for r in plan:
-                w.execute('update chat_sessions set workspace_id=?, cwd=?, execution_target_json=? '
-                          'where session_id=?', (ws['workspace_id'], root, et_json, r['session_id']))
+        for r in plan:
+            sid = r['session_id']
+            try:
+                with w:   # 每条独立事务：失败只影响自己
+                    w.execute('update chat_sessions set workspace_id=?, cwd=?, execution_target_json=? '
+                              'where session_id=?', (ws['workspace_id'], root, et_json, sid))
+                chk = w.execute('select workspace_id, cwd, execution_target_json '
+                                'from chat_sessions where session_id=?', (sid,)).fetchone()
+                ok = (chk and chk['workspace_id'] == ws['workspace_id'] and chk['cwd'] == root
+                      and load_json(chk['execution_target_json']).get('workspace', {}).get('path') == root)
+                results.append({'session_id': sid, 'title': r['title'],
+                                'status': 'ok' if ok else 'verify_failed',
+                                'manifest': manifests.get(sid)})
+                out(f"[{'OK' if ok else 'WARN'}] {sid[:8]}  {(r['title'] or '')[:34]}")
+            except Exception as ex:
+                results.append({'session_id': sid, 'title': r['title'],
+                                'status': 'failed', 'error': str(ex),
+                                'manifest': manifests.get(sid)})
+                out(f'[FAIL] {sid[:8]}  {ex}')
     finally:
         w.close()
-    out(f'已迁移 {len(plan)} 条 -> {ws["name"]}')
-    return 0
+
+    batch = write_batch_manifest(base, results, note=f'move -> {ws["name"]} ({root})')
+    ok_n = sum(1 for x in results if x['status'] == 'ok')
+    bad_n = len(results) - ok_n
+    out('')
+    out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
+    out(f'备份与清单: {base}')
+    out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
+    out(f'整批回滚: rollback --batch "{batch}"')
+    post_write_hint('迁移')
+    if args.json:
+        print(json.dumps({'target': ws['name'], 'backup': base, 'results': results},
+                         ensure_ascii=False, indent=2))
+    return 0 if bad_n == 0 else 1
 
 
 # ---------------------------------------------------------------- workspace
@@ -900,7 +1110,7 @@ def cmd_workspace(args, con, db_path):
             out('')
             out(f'[DRY-RUN] 将新建工作区 {name} -> {norm}（id {new_id}）')
             return 0
-        require_closed(args.force)
+        gate_running(getattr(args, 'require_closed', False))
         bk = make_backup(db_path, 'wsnew')
         out(f'已备份: {os.path.basename(bk)}')
         w = connect(db_path, write=True)
@@ -938,7 +1148,7 @@ def cmd_workspace(args, con, db_path):
         if not args.apply_flag:
             out('[DRY-RUN] 未写入')
             return 0
-        require_closed(args.force)
+        gate_running(getattr(args, 'require_closed', False))
         bk = make_backup(db_path, 'wsrename')
         out(f'已备份: {os.path.basename(bk)}')
         w = connect(db_path, write=True)
@@ -961,7 +1171,7 @@ def cmd_workspace(args, con, db_path):
         if not args.apply_flag:
             out('[DRY-RUN] 未写入')
             return 0
-        require_closed(args.force)
+        gate_running(getattr(args, 'require_closed', False))
         make_backup(db_path, 'wsarch')
         w = connect(db_path, write=True)
         try:
@@ -991,7 +1201,7 @@ def cmd_workspace(args, con, db_path):
             else:
                 out('[DRY-RUN] 未写入')
             return 0
-        require_closed(args.force)
+        gate_running(getattr(args, 'require_closed', False))
         bk = make_backup(db_path, 'wsretarget')
         out(f'已备份: {os.path.basename(bk)}')
         et = {'mode': 'local', 'host': {'id': 'local', 'kind': 'local', 'label': 'Local'},
@@ -1031,7 +1241,7 @@ def cmd_workspace(args, con, db_path):
             else:
                 out('[DRY-RUN] 未写入')
             return 0
-        require_closed(args.force)
+        gate_running(getattr(args, 'require_closed', False))
         bk = make_backup(db_path, 'wsdel')
         out(f'已备份: {os.path.basename(bk)}')
         ts = now_ms()
@@ -1056,33 +1266,49 @@ def cmd_workspace(args, con, db_path):
 def cmd_backup(args, con, db_path):
     if args.list:
         files = list_backups(db_path)
+        sets = backup_sets(db_path)
         if args.json:
-            print(json.dumps([{'path': p, 'size': os.path.getsize(p),
-                               'mtime': os.path.getmtime(p)} for p in files], ensure_ascii=False, indent=2))
+            print(json.dumps({'snapshots': [{'path': p, 'size': os.path.getsize(p),
+                                             'mtime': os.path.getmtime(p)} for p in files],
+                              'sets': [{'path': p, 'mtime': os.path.getmtime(p),
+                                        'batch': os.path.isfile(os.path.join(p, 'batch.json'))}
+                                       for p in sets]}, ensure_ascii=False, indent=2))
             return 0
-        if not files:
+        if not files and not sets:
             out('尚无备份')
             return 0
-        out(f'共 {len(files)} 份备份（保留最近 {BACKUP_KEEP} 份）')
-        for p in files:
-            out(f"  {fmt_ms(os.path.getmtime(p)*1000)}  {os.path.getsize(p)/1048576:>7.1f} MB  {os.path.basename(p)}")
+        if files:
+            out(f'整库快照 {len(files)} 份（保留最近 {BACKUP_KEEP} 份）')
+            for p in files:
+                out(f"  {fmt_ms(os.path.getmtime(p)*1000)}  {os.path.getsize(p)/1048576:>7.1f} MB  {os.path.basename(p)}")
+        if sets:
+            out('')
+            out(f'按对象清单 {len(sets)} 组（可单条/整批回滚）')
+            for p in sets:
+                n_items = len(glob.glob(os.path.join(p, 'items', '*.json')))
+                out(f"  {fmt_ms(os.path.getmtime(p)*1000)}  {n_items:>3} 条  {os.path.basename(p)}")
         return 0
-    require_closed(args.force)
+    gate_running(getattr(args, 'require_closed', False))
     p = make_backup(db_path, 'manual')
     out(f'已备份: {p}')
     return 0
 
 
 def cmd_rollback(args, con, db_path):
+    if args.manifest or args.batch:
+        return rollback_items(args, con, db_path)
+
     src = args.backup
-    if not src or not os.path.isfile(src):
+    if not src:
+        die('请指定 --backup（整库快照）、--manifest（单条）或 --batch（整批）')
+    if not os.path.isfile(src):
         die(f'备份文件不存在: {src}')
     if not args.yes:
         die('回滚会覆盖当前数据库，需要 --yes 确认')
     if not args.apply_flag:
         out(f'[DRY-RUN] 将用 {os.path.basename(src)} 覆盖当前库（当前库会先另存一份）')
         return 0
-    require_closed(args.force)
+    gate_running(getattr(args, 'require_closed', False))
     safety = make_backup(db_path, 'pre-rollback')
     out(f'当前库已另存: {os.path.basename(safety)}')
     con.close()
@@ -1098,6 +1324,62 @@ def cmd_rollback(args, con, db_path):
     return 0
 
 
+def rollback_items(args, con, db_path):
+    """按 manifest / batch 逐行恢复，只影响清单里列出的行。"""
+    paths = []
+    if args.manifest:
+        paths.append(args.manifest)
+    if args.batch:
+        if not os.path.isfile(args.batch):
+            die(f'批次清单不存在: {args.batch}')
+        with open(args.batch, encoding='utf-8') as f:
+            batch = json.load(f)
+        base = os.path.dirname(os.path.abspath(args.batch))
+        for it in batch.get('items', []):
+            name = it.get('manifest')
+            if not name:
+                continue
+            p = os.path.join(base, 'items', name)
+            if os.path.isfile(p):
+                paths.append(p)
+
+    if not paths:
+        die('清单里没有可恢复的条目')
+
+    out(f'待恢复 {len(paths)} 条')
+    if not args.yes:
+        die('按清单回滚会覆盖对应会话的当前值，需要 --yes 确认')
+    if not args.apply_flag:
+        out('[DRY-RUN] 未写入')
+        return 0
+
+    gate_running(getattr(args, 'require_closed', False))
+    w = connect(db_path, write=True)
+    ok = fail = 0
+    try:
+        for p in paths:
+            try:
+                with open(p, encoding='utf-8') as f:
+                    payload = json.load(f)
+                with w:
+                    n = restore_row(w, payload)
+                if n:
+                    ok += 1
+                    out(f"[OK] {payload['table']}  {str(payload['key_value'])[:8]}")
+                else:
+                    fail += 1
+                    out(f"[MISS] {payload['table']}  {str(payload['key_value'])[:8]}（未命中）")
+            except Exception as ex:
+                fail += 1
+                out(f'[FAIL] {os.path.basename(p)}  {ex}')
+    finally:
+        w.close()
+    out('')
+    out(f'完成：恢复 {ok}，失败 {fail}')
+    post_write_hint('回滚')
+    return 0 if fail == 0 else 1
+
+
 # ---------------------------------------------------------------- CLI
 
 def build_parser():
@@ -1106,15 +1388,16 @@ def build_parser():
         description='Qoder 会话管理：列表 / 重命名 / 迁移工作区 / 管理工作区 / 备份回滚 / 体检')
     p.add_argument('--db', help='Qoder main.sqlite 路径（默认自动探测）')
     p.add_argument('--json', action='store_true', help='输出结构化 JSON')
-    p.add_argument('--force', action='store_true', help='Qoder 运行时仍强制写入（有风险）')
+    p.add_argument('--require-closed', action='store_true',
+                   help='Qoder 运行时拒绝写入（默认允许热写，写完重启验证）')
     p.add_argument('--version', action='version', version=f'qoder-conversation-manager {VERSION}')
     sub = p.add_subparsers(dest='cmd', required=True)
 
-    # 允许把 --db/--json/--force 写在子命令后面；SUPPRESS 避免覆盖主解析器的值
+    # 允许把 --db/--json/--require-closed 写在子命令后面；SUPPRESS 避免覆盖主解析器的值
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument('--db', default=argparse.SUPPRESS)
     common.add_argument('--json', action='store_true', default=argparse.SUPPRESS)
-    common.add_argument('--force', action='store_true', default=argparse.SUPPRESS)
+    common.add_argument('--require-closed', action='store_true', default=argparse.SUPPRESS)
 
     sub.add_parser('doctor', parents=[common], help='体检：库/表/进程/路径/影子/备份')
 
@@ -1140,6 +1423,12 @@ def build_parser():
     rp.add_argument('--limit', type=int)
     rp.add_argument('--user-cap', type=int, default=4000, help='单条用户消息保留字符数')
     rp.add_argument('--assist-cap', type=int, default=1500, help='单条助手消息保留字符数')
+    rp.add_argument('--shards', type=int, default=0,
+                    help='导出时按字数做 LPT 均衡分组，生成 shards/groupN.json')
+    rp.add_argument('--min-title-len', type=int, default=2, dest='min_title_len')
+    rp.add_argument('--max-title-len', type=int, default=40, dest='max_title_len')
+    rp.add_argument('--require-prefix', action='store_true', dest='require_prefix',
+                    help='要求标题带 [短分类] 前缀')
 
     mp = sub.add_parser('move', parents=[common], help='迁移会话到工作区')
     mp.add_argument('--to', required=True, help='目标工作区：名称 / 根路径 / UUID')
@@ -1174,8 +1463,10 @@ def build_parser():
     bp = sub.add_parser('backup', parents=[common], help='备份')
     bp.add_argument('--list', action='store_true', help='列出备份')
 
-    rb = sub.add_parser('rollback', parents=[common], help='从备份恢复')
-    rb.add_argument('--backup', required=True, help='备份文件路径')
+    rb = sub.add_parser('rollback', parents=[common], help='从备份恢复（整库 / 单条 / 整批）')
+    rb.add_argument('--backup', help='整库快照文件（main.sqlite.bak-*）')
+    rb.add_argument('--manifest', help='单条清单（qoder-cm-backups/**/items/*.json）')
+    rb.add_argument('--batch', help='整批清单（qoder-cm-backups/**/batch.json）')
     rb.add_argument('--yes', action='store_true')
     rb.add_argument('--apply-flag', '--apply', dest='apply_flag', action='store_true')
 

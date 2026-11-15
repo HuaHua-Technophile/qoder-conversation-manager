@@ -6,7 +6,7 @@ description_en: Manage local Qoder sessions and workspaces — rename from full 
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.0.0
+version: 1.1.0
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -60,7 +60,9 @@ python <skill-dir>/scripts/qoder_sessions.py doctor
 
 ## 命令总览
 
-所有命令都支持 `--db <path>`（指向副本做演练）、`--json`（结构化输出）、`--force`（Qoder 运行中仍写入，慎用）。
+所有命令都支持 `--db <path>`（指向副本做演练）、`--json`（结构化输出）。
+
+写操作默认**允许 Qoder 运行中热写**（与 WorkBuddy 侧技能一致）：写完提示重启应用，让侧栏按数据库重建。需要硬性拦截时加 `--require-closed`（退出码 3）。
 
 ### doctor
 
@@ -96,23 +98,33 @@ python <skill>/scripts/qoder_sessions.py rename --export --filter "status = acti
 
 导出目录里每个会话一个 `.txt`（含 SESSION_ID、现有标题、标题来源、工作区、cwd、消息数、用户轮数、完整对话），外加 `index.json`。
 
+大批量时加 `--shards N`，会按字数用 LPT 均衡切片，生成 `shards/group1.json … groupN.json`，每组一份清单直接派给子智能体：
+
+```bash
+python <skill>/scripts/qoder_sessions.py rename --export --shards 6 --out ./exp
+```
+
 第二步，agent 读这些 txt 生成 `titles.json`：
 
 ```json
 [
-  {"sid": "e3d0af7b-8f30-40a9-a5aa-08b000dc0b3d", "new_title": "把会话迁移技能传到笔记本"},
-  {"sid": "2dd673fa", "new_title": "排除代理误判定位 RDP 链路丢包"}
+  {"sid": "e3d0af7b-8f30-40a9-a5aa-08b000dc0b3d", "new_title": "把会话迁移技能传到笔记本", "category": "开发"},
+  {"sid": "2dd673fa", "new_title": "排除代理误判定位 RDP 链路丢包", "category": "网络"}
 ]
 ```
 
-`sid` 可写完整 UUID 或前 8 位。然后写回：
+`sid` 可写完整 UUID 或前 8 位。`category` 可选：写了会**自动补成 `[分类] 标题`**（标题已带前缀则不重复加）。然后写回：
 
 ```bash
-python <skill>/scripts/qoder_sessions.py rename --import titles.json            # 干跑
-python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply    # 落盘
+python <skill>/scripts/qoder_sessions.py rename --import titles.json                          # 干跑
+python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply                  # 落盘
+python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply \
+  --min-title-len 12 --max-title-len 30 --require-prefix                                      # 带长度与前缀约束
 ```
 
-校验规则（基础档）：非空、2–40 字符、不含引号/书名号/句号/问号/换行/路径分隔符。重复标题只告警不拦截。
+校验规则：非空、长度落在 `--min-title-len` / `--max-title-len`（默认 2–40）、不含引号/书名号/句号/问号/控制字符/路径分隔符；`--require-prefix` 时校验 `^\[[^\[\]]{1,8}\]\s+\S`。**允许不同会话重名**，不去重。
+
+**分类约定**：短类 2–4 个汉字，全库收敛在 8–12 个（如 系统/网络/开发/数据/硬件/办公/生活/其他）。前缀计入长度。
 
 **标题怎么写**：必须读完整对话再定名，不要只看开头。判断真实主线——用户最初想做什么 → 中途遇到什么 → 最后实际交付什么；中途转向时以占篇幅最大或最终解决的那条命名。长度 8–22 个汉字，技术名词保留原文并与中文之间加半角空格。详见 `references/subagent-playbook.md`。
 
@@ -127,7 +139,9 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 工具包" --apply
 ```
 
-`--to` 接受工作区名称、根路径或 UUID。迁移会同时改 `workspace_id`、`cwd`、`execution_target_json.workspace.{id,path}` 三处，保持一致。已在目标工作区的会话自动跳过。
+`--to` 接受工作区名称、根路径或 UUID。迁移会同时改 `workspace_id`、`cwd`、`execution_target_json.workspace.{id,path}` 三处，保持一致。已在目标工作区的会话自动跳过；`--ids` 里匹配不到的 ID 会告警。
+
+落盘时**每条会话一个独立事务**：某条失败只标记 `[FAIL]`，其余继续。写完逐条回读三处字段并打 `[OK]` / `[WARN]`，最后输出成功/失败计数与备份组路径。
 
 ### workspace
 
@@ -147,13 +161,22 @@ python <skill>/scripts/qoder_sessions.py workspace delete --name VMs --yes --app
 
 ### backup / rollback
 
+两级备份，回滚粒度不同：
+
 ```bash
+# 按对象清单（rename / move 自动生成）
+python <skill>/scripts/qoder_sessions.py rollback --manifest "<备份组>/items/chat_sessions-<sid>.json" --yes --apply
+python <skill>/scripts/qoder_sessions.py rollback --batch "<备份组>/batch.json" --yes --apply
+
+# 整库快照（手动，或破坏性操作前）
 python <skill>/scripts/qoder_sessions.py backup --list
 python <skill>/scripts/qoder_sessions.py backup
-python <skill>/scripts/qoder_sessions.py rollback --backup <某个 .bak 文件> --yes --apply
+python <skill>/scripts/qoder_sessions.py rollback --backup <main.sqlite.bak-*> --yes --apply
 ```
 
-备份写在数据库同目录，命名 `main.sqlite.bak-<动作>-<时间戳>`，默认保留最近 10 份。任何写操作落盘前会自动备份一次。`rollback` 会先把当前库另存为 `bak-pre-rollback-*` 再覆盖。
+- `rename` / `move` 每次落盘会新建一组 `qoder-cm-backups/<动作>-<时间戳>/`：`items/` 下每条会话一份完整行，`batch.json` 汇总。**单条回滚只动那一行**，不影响同批其他会话。
+- `backup` / `workspace delete` / `workspace retarget` / `rollback --backup` 仍用整库快照 `main.sqlite.bak-*`，保留最近 10 份。
+- `rollback --backup` 会先把当前库另存为 `bak-pre-rollback-*` 再覆盖。
 
 ## 典型工作流
 
@@ -187,21 +210,23 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 ## 安全规则
 
 1. **默认 dry-run**：所有写命令不加 `--apply` 只打印计划，不落盘。
-2. **写入前必须 Qoder 已退出**。运行中会直接拒绝（退出码 3）；`--force` 可绕过但不推荐。
-3. **每次落盘前自动整库备份**，保留最近 10 份。
-4. **影子会话一律拒绝**改名与迁移，并在输出里说明原因。
-5. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
-6. **删除只做软删除**（进回收站），且必须 `--yes`。
-7. **只改元数据**，不碰 `chat_session_messages` 正文与搜索索引。
-8. **副本演练**：给 `--db` 指向副本时，不要求 Qoder 退出，可放心跑全套写操作。
+2. **允许热写**：Qoder 运行中也能写（WAL 保证一致性），写完必须重启应用做一次重建验证；要硬性拦截用 `--require-closed`。
+3. **按对象备份**：每条被改动的会话在 `qoder-cm-backups/<动作>-<时间戳>/items/` 下存一份完整行，`batch.json` 汇总，支持单条或整批回滚。
+4. **每条独立事务**：批量操作某条失败只影响它自己，其余继续；结束后按成功/失败计数返回退出码。
+5. **破坏性操作仍做整库快照**（`main.sqlite.bak-*`，保留最近 10 份）：`workspace delete`、`workspace retarget`、`rollback --backup`。
+6. **影子会话一律拒绝**改名与迁移，并在输出里说明原因。这是 Qoder 特有的数据形态——`peerOriginSessionId` 非空的会话正文在另一台设备，本机只有元数据，改了会被同步覆盖。
+7. **只操作本地工作区**；对端投影既不能作为迁移目标，也不能被改名/删除。
+8. **删除只做软删除**（进回收站），且必须 `--yes`。
+9. **只改元数据**，不碰 `chat_session_messages` 正文与搜索索引。
+10. **副本演练**：给 `--db` 指向副本时，与真库互不影响，可放心跑全套写操作。
 
-退出码：`0` 成功；`1` doctor 有告警；`2` 参数/选择/目标错误或缺少确认；`3` Qoder 正在运行。
+退出码：`0` 全部成功；`1` 有失败或 doctor 有告警；`2` 参数/选择/目标错误或缺少确认；`3` 指定了 `--require-closed` 且 Qoder 在运行。
 
 ## 常见错误
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| `检测到 N 个 Qoder 进程` | 应用未退出 | 完全退出（含托盘）后重试，或先 `--db` 指向副本演练 |
+| 写完标题没变 | 应用还在用旧缓存 | 重启 Qoder；仍不变则查 `titleSource` 是否为 `custom` |
 | `目标工作区名不唯一` | 存在同名本地/对端工作区 | 用 `workspace list` 查 UUID，`--to <UUID>` |
 | 迁完侧栏没变 | 应用未重启 | 重启 Qoder |
 | 改完标题又变回去 | 只改了 `title`，没锁 `titleSource` | 用本技能 `rename --import`（会自动锁定） |

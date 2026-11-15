@@ -44,8 +44,8 @@ python scripts/qoder_sessions.py doctor
 # 2. 看看有哪些会话
 python scripts/qoder_sessions.py list --limit 20
 
-# 3. 导出完整历史（默认导出全部活跃会话）
-python scripts/qoder_sessions.py rename --export --out ./exp
+# 3. 导出完整历史（默认导出全部活跃会话；大批量加 --shards 做均衡分片）
+python scripts/qoder_sessions.py rename --export --shards 6 --out ./exp
 
 # 4. 让 agent 读 ./exp/*.txt，产出 titles.json，然后先干跑
 python scripts/qoder_sessions.py rename --import titles.json
@@ -86,8 +86,9 @@ python scripts/qoder_sessions.py rollback --backup <main.sqlite.bak-...> --yes -
 ## 安全设计
 
 - **默认 dry-run**：所有写命令不加 `--apply` 只打印计划。
-- **写入前必须退出 Qoder**：运行中直接拒绝（退出码 3），可用 `--force` 绕过但不推荐。
-- **每次落盘前自动整库备份**，同目录保留最近 10 份。
+- **允许热写**：Qoder 运行中也能写（WAL 保证一致性），写完重启应用做一次重建验证；要硬性拦截加 `--require-closed`。
+- **按对象备份**：每条被改动的会话单独存一份完整行，支持单条回滚（`rollback --manifest`）或整批回滚（`rollback --batch`）；破坏性操作仍做整库快照，保留最近 10 份。
+- **每条独立事务**：批量操作某条失败不影响其余，结束时按成功/失败计数返回退出码。
 - **影子会话一律拒绝**：`peerOriginSessionId` 非空的会话正文在另一台设备，改了会被同步覆盖。
 - **只操作本地工作区**：同名工作区解析优先取本地那份。
 - **删除只做软删除**（进 Qoder 回收站），且必须 `--yes`。
