@@ -130,12 +130,13 @@ cp -r skills/qoder-conversation-manager "$HOME/.workbuddy/skills/"
 
 | 文件 | 内容 |
 |---|---|
-| [`SKILL.md`](SKILL.md) | 技能主文档：完整命令、工作流、安全规则 |
-| [`references/qoder-storage.md`](references/qoder-storage.md) | 表结构、写入约定、验证 SQL、已知坑 |
-| [`references/subagent-playbook.md`](references/subagent-playbook.md) | 大批量重命名的子智能体切片与派活模板 |
-| [`references/cases.md`](references/cases.md) | 真实案例：27 条重命名、13 条跨工作区迁移 |
-| [`references/install.md`](references/install.md) | 三端安装与验证 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本记录 |
+| [`DEVELOPMENT.md`](DEVELOPMENT.md) | **开发与发布流程**：改哪、怎么测、怎么发 |
+| [`SKILL.md`](skills/qoder-conversation-manager/SKILL.md) | 技能主文档：完整命令、工作流、安全规则 |
+| [`references/qoder-storage.md`](skills/qoder-conversation-manager/references/qoder-storage.md) | 表结构、写入约定、验证 SQL、已知坑 |
+| [`references/subagent-playbook.md`](skills/qoder-conversation-manager/references/subagent-playbook.md) | 大批量重命名的子智能体切片与派活模板 |
+| [`references/cases.md`](skills/qoder-conversation-manager/references/cases.md) | 真实案例：27 条重命名、13 条跨工作区迁移 |
+| [`references/install.md`](skills/qoder-conversation-manager/references/install.md) | 三端安装与验证 |
+| [`CHANGELOG.md`](skills/qoder-conversation-manager/CHANGELOG.md) | 版本记录 |
 
 ## 已知限制
 
