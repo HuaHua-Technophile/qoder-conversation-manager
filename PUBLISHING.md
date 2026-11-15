@@ -1,107 +1,122 @@
 # 发布与上架
 
-本文件记录该技能在各分发渠道的状态，以及还需要人工完成的步骤。
+本文件记录分发渠道状态与提交步骤。平台规则可能变化，**以页面提示为准**；下列流程核对于 2026-11-15。
 
 ## 状态总览
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，含 v1.1.x Release 与两个安装包 |
-| skills.sh（Vercel Labs Agent Skills Directory） | ✅ 已收录 | 通过 `npx skills add` 安装即进入索引；已安装到 `~/.agents/skills/`，榜单检索有延迟 |
-| WorkBuddy 开放平台 | ⏳ 待提交 | 安装包已就绪，需开发者认证后在后台上传 |
-| Qoder 技能市场 | ⏳ 待提交 | 安装包已就绪，需在 Qoder 内提交（机审，通常几分钟） |
-| skillstore.io | ⏳ 待提交 | 填仓库地址即可，需 GitHub 登录授权 |
-| Skill Vault（skillvault.md） | ⏳ 待提交 | 需注册登录后上传 SKILL.md |
-| Claude 插件目录 | ❌ 暂不适用 | 需要付费开发者计划 |
+| GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，Release 含两个安装包 |
+| skills.sh（Vercel Labs 目录） | ✅ 已收录 | `npx skills add` 可装；榜单更新有延迟 |
+| WorkBuddy 开放平台 | ⏳ 待提交 | 需开发者认证；提审有配额（当日 5 次 / 当月 20 次） |
+| Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
+| skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
 
-## 一键安装（已可用）
+## 提交材料
 
-```bash
-npx skills add HuaHua-Technophile/qoder-conversation-manager
-```
+- **标识名**：`qoder-conversation-manager`（小写字母、数字、连字符）
+- **中文名**：`Qoder会话管理`　**英文名**：`Qoder Conversation Manager`
+- **版本**：见 `SKILL.md` 的 `version`
+- **分类**：开发工具 / 效率工具 / 数据管理
+- **许可证**：MIT
 
-也可以直接克隆：
+**中文简介**
 
-```bash
-git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
-```
+> 管理 Qoder 桌面端会话与工作区：按完整对话历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。
 
-## 提交材料（可直接复制）
+**英文简介**
 
-**技能名（英文）**：Qoder Conversation Manager
-**技能名（中文）**：Qoder会话管理
-**版本**：1.1.1
-**分类**：开发工具 / 效率工具 / 数据管理
-**许可证**：MIT
-
-**一句话简介（中文）**
-> 管理 Qoder 本地会话与工作区：按完整对话历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并自动备份。
-
-**一句话简介（英文）**
-> Manage local Qoder sessions and workspaces — rename from full transcripts, move between workspaces, backup & rollback, with dry-run default and automatic backups.
+> Manage Qoder desktop sessions and workspaces — rename from full transcripts, move between workspaces, backup & rollback, with dry-run default and per-object backups.
 
 **适用场景**
-- 侧栏会话标题只反映第一句话、难以辨认时批量重命名
-- 把同一主题的对话归入对应工作区
-- 新建/调整/清理工作区
-- 改库前的体检与回滚
 
-**限制说明**
-- 仅 Windows；需 Python 3.9+
-- 只操作本机 Qoder 数据，不处理其他设备的影子会话
-- 写入前需退出 Qoder
+- 侧栏标题只反映第一句话，批量重命名
+- 把同一主题的对话归入对应工作区（含文件、记忆、产出）
+- 新建 / 调整 / 清理工作区
+- 改库前体检与回滚
 
-## 待人工完成的步骤
+**限制**
 
-### 1. WorkBuddy 开放平台
+- 仅 Windows；Python 3.9+
+- 只操作本机 Qoder 数据；跨设备影子会话只读
+- 全局记忆 `~/.qoder/memory/` 不随迁移变动
 
-1. 打开 <https://open.workbuddy.cn>，完成开发者认证（个人：身份证 + 人脸）。
-2. 进入「发布管理 → 技能 → 创建」，上传 `qoder-conversation-manager-root-1.1.1.zip`。
-   - 包内根目录直接是 `SKILL.md`，符合平台要求；体积 34 KB，远低于 3 MB 上限。
-3. 补充头像（512×512，≤500KB）、分类、使用说明。
-4. 提交审核（官方口径 7 个工作日，实测常当天出结果）。
-5. 若要做付费：审核通过后再开通收款账户；注意**展示名称不能含空格**，本包已使用 `Qoder会话管理`。
+## 渠道一：WorkBuddy 开放平台
 
-### 2. Qoder 技能市场
+1. 打开 <https://open.workbuddy.cn>，完成开发者认证（个人：身份材料 + 人脸）。
+2. 左侧「发布管理 → 技能 → 创建」。
+3. 上传压缩包。**要求：解压后第一层就是技能目录**，即 `qoder-conversation-manager/SKILL.md`，且只允许两级目录。用 `-dir` 包。
+4. 平台自动解析 `SKILL.md` 的 frontmatter，以下字段缺一不可（本仓库已齐）：
 
-1. 在 Qoder 内打开技能市场 → 上传自有 Skill。
-2. 使用 `qoder-conversation-manager-dir-1.1.1.zip`（单层同名目录 + SKILL.md）。
-3. 审核以机审为主，通常几分钟出结果。
-4. 参考文档：<https://docs.qoder.com/zh/qoderwork/skill-marketplace-guidelines>
+   | 字段 | 本仓库取值 |
+   |---|---|
+   | `name` | `qoder-conversation-manager` |
+   | `version` | 与发布版本一致 |
+   | `display_name` | `Qoder会话管理`（中文展示名） |
+   | `display_name_en` | `Qoder Conversation Manager` |
+   | `description_zh` | 中文描述 |
+   | `description_en` | 英文描述 |
 
-> 也可走 API：`POST https://api.qoder.com.cn/api/v1/cloud/skills`，需 `QODER_ACCESS_TOKEN`，`files` 字段传上述 zip。
+   解析失败时平台会逐条列出缺什么，照补即可。
+5. 「确认信息」：市场展示名称、分类、头像（512×512、≤500KB、JPG/PNG）、服务类目（1–5 个）。
+6. 提交审核。标注 7 个工作日，实测多在 1 天内。
+7. **过审后还要手动点「发布」并选公开发布**，否则一直躺在后台。
+8. 付费为可选项：过审后在「收入变现」开通收款账户（微信签约）。注意计费模式一经发布不可改。
 
-### 3. skillstore.io
+> 提审有额度：页面显示「当日 5 次、当月 20 次」，改完再传，别浪费在格式错误上。
 
-1. 打开 <https://skillstore.io/submit>。
-2. 填入仓库地址 `https://github.com/HuaHua-Technophile/qoder-conversation-manager`。
-3. 等待自动安全扫描与人工审核。
+## 渠道二：Qoder
 
-### 4. Skill Vault
+**自用安装**（不需要审核）：
 
-1. 打开 <https://skillvault.md>，用 GitHub / Google / 邮箱登录。
-2. 上传 `SKILL.md`，填写兼容的宿主标签。
+1. Qoder → 扩展 → 技能 → 添加技能 → 上传 Skill。
+2. 支持 `.zip` / `.skill` / `SKILL.md`，**一次一项，不能传文件夹**。
+3. 也可以直接把目录放到 `~/.qoder/skills/qoder-conversation-manager/`。
+
+**上架公开市场**：
+
+1. 同一入口提交发布，审核后在「我的发布」管理。
+2. 审核重点（官方口径）：描述用第三人称写清职责与触发场景并含自然语言关键词；正文有步骤、注意事项与验证方式；不得含占位符或不可执行伪代码；不得有恶意脚本或真实凭证。
+3. Skill 为机审为主、人工抽检，通常数分钟出结果。
+4. 指南：<https://docs.qoder.com/zh/qoderwork/skill-marketplace-guidelines>
+
+## 渠道三：第三方目录（可选）
+
+- **skills.sh**：`npx skills add HuaHua-Technophile/qoder-conversation-manager` 即可安装，收录后出现在目录索引。
+- **skillstore.io**：<https://skillstore.io/submit> 填仓库地址，自动扫描后人工审核。
+- **Skill Vault**：<https://skillvault.md> 登录后上传 `SKILL.md`。
 
 ## 打包
 
 ```bash
-python build_pkg.py
+python scripts/build_pkg.py
 ```
 
-生成两个包：
+产物：
 
-- `dist/qoder-conversation-manager-root-1.1.1.zip`：根目录直接含 `SKILL.md`
-- `dist/qoder-conversation-manager-dir-1.1.1.zip`：单层目录 `qoder-conversation-manager/`
+- `dist/qoder-conversation-manager-dir-<版本>.zip`：单层目录，**WorkBuddy 与 Qoder 都用这个**
+- `dist/qoder-conversation-manager-root-<版本>.zip`：SKILL.md 在根，供要求扁平结构的目录使用
+
+> 两个包内容一致，只差一层目录。上传报「结构不符合」时换另一个再试。
 
 ## 版本发布流程
 
 ```bash
-git add -A
-git commit -m "feat: ..."
-git tag v1.0.1
-git push && git push --tags
-gh release create v1.0.1 dist/*.zip --title "v1.0.1" --notes "..."
+# 1) 改 SKILL.md 的 version 与 CHANGELOG
+# 2) 同步脚本里的 VERSION
+python scripts/build_pkg.py
+git add -A && git commit -m "feat(vX.Y.Z): ..."
+git push
+gh release create vX.Y.Z dist/*.zip --title "vX.Y.Z — 摘要" --notes "..."
+# 3) 到各平台重新上传 zip，版本号与 SKILL.md 保持一致
 ```
 
-> 本机 HTTPS 访问 GitHub 的 git 端点会被重置，仓库已改用 SSH（部署密钥仅授权该仓库）。
-> 若在其他机器上推送，需要自行配置凭据。
+## 发布前自检
+
+- [ ] `SKILL.md` 的 `version` = 本次发布版本
+- [ ] `python scripts/qoder_sessions.py doctor` 通过
+- [ ] `python scripts/build_pkg.py` 重新打包
+- [ ] 解压 zip 确认第一层目录名与 `name` 一致
+- [ ] frontmatter 六个必填字段齐全
+- [ ] 头像尺寸与大小合规
+- [ ] 提交后用新会话实测：能识别何时触发、命令能跑通

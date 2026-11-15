@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.3.0
+version: 1.3.2
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
