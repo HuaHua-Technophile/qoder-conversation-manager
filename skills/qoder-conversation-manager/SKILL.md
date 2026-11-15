@@ -56,6 +56,8 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 
 ## 安装
 
+> 仓库里技能位于 `skills/qoder-conversation-manager/`，安装时用仓库根的 `python install.py` 摊平复制到宿主目录；宿主只认「技能目录根部有 SKILL.md」的扁平形态。
+
 把整个目录放进宿主 agent 的用户级技能目录即可。目录约定由宿主决定，例如：
 
 ```

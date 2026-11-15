@@ -38,6 +38,8 @@ Qoder 自带的会话命名只取「首条用户消息 + 首条助手回复」�
 
 ## 快速开始
 
+以下命令在技能目录内执行（`cd ~/.workbuddy/skills/qoder-conversation-manager`）。
+
 ```bash
 # 1. 体检
 python scripts/qoder_sessions.py doctor
@@ -100,13 +102,24 @@ python scripts/qoder_sessions.py rollback --backup ./qoder-cm-backups/db/<快照
 
 技能是纯目录 + Python 标准库脚本，不需要 `pip install`。把整个目录放进宿主的用户级技能目录即可，宿主之间可共用同一份目录。
 
+仓库按 `skills/<技能名>/` 组织（便于 skills.sh 这类目录索引），而宿主要求技能目录根部直接是 `SKILL.md`，所以用脚本摊平安装：
+
 ```bash
-# 以 Qoder 与 Codex 为例，路径以宿主设置为准
-cp -r qoder-conversation-manager "$HOME/.qoder/skills/"
-cp -r qoder-conversation-manager "$HOME/.codex/skills/"
+git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
+cd qoder-conversation-manager
+
+python install.py                 # 装到 ~/.workbuddy/skills
+python install.py --to ~/.qoder/skills
+python install.py --targets all   # WorkBuddy / Qoder / .agents 三处都装
 ```
 
-详见 [`references/install.md`](references/install.md)。
+也可以手抄：
+
+```bash
+cp -r skills/qoder-conversation-manager "$HOME/.workbuddy/skills/"
+```
+
+详见 [`references/install.md`](skills/qoder-conversation-manager/references/install.md)。
 
 ## 文档
 

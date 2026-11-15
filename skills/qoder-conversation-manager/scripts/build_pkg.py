@@ -11,7 +11,8 @@ import argparse
 import os
 import zipfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # skills/<name>/
+REPO = os.path.dirname(os.path.dirname(ROOT))                        # 仓库根
 NAME = 'qoder-conversation-manager'
 VERSION = '1.3.3'
 
@@ -24,6 +25,8 @@ def collect():
     items = []
     for f in FILES:
         p = os.path.join(ROOT, f)
+        if not os.path.isfile(p):          # README/LICENSE 放在仓库根
+            p = os.path.join(REPO, f)
         if os.path.isfile(p):
             items.append((p, f))
     for d in DIRS:
@@ -50,7 +53,7 @@ def build(out_dir, prefix):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', default=os.path.join(ROOT, 'dist'))
+    ap.add_argument('--out', default=os.path.join(REPO, 'dist'))
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     build(args.out, '')

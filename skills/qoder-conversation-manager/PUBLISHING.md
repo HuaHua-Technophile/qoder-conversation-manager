@@ -89,7 +89,7 @@
 ## 打包
 
 ```bash
-python scripts/build_pkg.py
+python skills/qoder-conversation-manager/scripts/build_pkg.py
 ```
 
 产物：
@@ -104,7 +104,7 @@ python scripts/build_pkg.py
 ```bash
 # 1) 改 SKILL.md 的 version 与 CHANGELOG
 # 2) 同步脚本里的 VERSION
-python scripts/build_pkg.py
+python skills/qoder-conversation-manager/scripts/build_pkg.py
 git add -A && git commit -m "feat(vX.Y.Z): ..."
 git push
 gh release create vX.Y.Z dist/*.zip --title "vX.Y.Z — 摘要" --notes "..."
@@ -115,7 +115,7 @@ gh release create vX.Y.Z dist/*.zip --title "vX.Y.Z — 摘要" --notes "..."
 
 - [ ] `SKILL.md` 的 `version` = 本次发布版本
 - [ ] `python scripts/qoder_sessions.py doctor` 通过
-- [ ] `python scripts/build_pkg.py` 重新打包
+- [ ] `python skills/qoder-conversation-manager/scripts/build_pkg.py` 重新打包
 - [ ] 解压 zip 确认第一层目录名与 `name` 一致
 - [ ] frontmatter 六个必填字段齐全
 - [ ] 头像尺寸与大小合规
