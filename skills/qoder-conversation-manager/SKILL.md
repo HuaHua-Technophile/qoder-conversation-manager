@@ -20,7 +20,7 @@ examples_en:
   - "Move all NAS-related conversations into the NAS workspace, files included"
   - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.3.7
+version: 1.3.8
 tags: [Qoder, 任务管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
