@@ -8,7 +8,7 @@
 
 ```
 ~/.workbuddy/skills/qoder-task-manager
-        └─(symlink)→ C:/Users/HuaHua/dev/qoder-task-manager/skills/qoder-task-manager
+        └─(symlink)→ E:/B/qoder-task-manager/skills/qoder-task-manager
 ```
 
 改仓库里的文件，等于直接改运行时——不用复制、不用重装、不用重启 WorkBuddy（新会话即生效）。
@@ -42,7 +42,7 @@ Windows 建符号链接需要**开发者模式**或管理员权限。
 ### 1. 改之前先拉最新
 
 ```bash
-cd C:/Users/HuaHua/dev/qoder-task-manager
+cd E:/B/qoder-task-manager
 git pull
 ```
 
@@ -92,7 +92,7 @@ python scripts/qoder_sessions.py rename --db /tmp/test.sqlite --ids xxx --apply
 ### 5. 提交推送
 
 ```bash
-cd C:/Users/HuaHua/dev/qoder-task-manager
+cd E:/B/qoder-task-manager
 git add -A
 git commit -m "feat(vX.Y.Z): 一句话说明"
 git push
@@ -145,7 +145,7 @@ WorkBuddy 那次需要手动：拿 `dist/qoder-task-manager-dir-<版本>.zip` �
 
 **`skillhub publish` 会打包整个目录**：临时文件、`__pycache__`、`dist/` 都会进去。发布前确认目录干净。
 
-**仓库不要放网络盘**：技能目录是指向仓库的符号链接。仓库若落在 SMB 共享上（例如 `X:` ＝ `//huahua-book/B/`），笔记本离线时链接会断、技能读不到。仓库固定在 `C:\Users\HuaHua\dev\` 就没有这个问题；而工作区（对话空间）照旧放 SMB 互不影响，两者可以分开。
+**仓库不要放网络盘**：技能目录是指向仓库的符号链接。仓库若落在 SMB 共享上（例如 `X:` ＝ `//huahua-book/B/`），笔记本离线时链接会断、技能读不到。仓库固定在本地磁盘（`E:\B\`）就没有这个问题；而工作区（对话空间）照旧放 SMB 互不影响，两者可以分开。
 
 ## 六、改完之后
 
