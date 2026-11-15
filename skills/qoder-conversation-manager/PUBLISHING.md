@@ -7,7 +7,7 @@
 | 平台 | 状态 | 说明 |
 |---|---|---|
 | GitHub | ✅ 已发布 v1.3.5 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，[Release v1.3.5](https://github.com/HuaHua-Technophile/qoder-conversation-manager/releases/tag/v1.3.5) 含两个安装包 |
-| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.3<br>⏳ v1.3.5 审核中 | CLI 发布，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标与分类（开发编程）均已就位 |
+| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.5<br>⏳ v1.3.6 审核中 | CLI 发布，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已改用 `skills/<name>/` 布局，等它下次扫描 |
 | WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 1.3.5 | 能力 ID `os_f2f623a10e63b114`，公开。**今日提审额度已满 5/5**（当月 5/20），次日恢复后可传 `-dir` 包 |
 | Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
@@ -117,6 +117,17 @@ if isinstance(_subs, list):
 ```
 
 然后 bump 版本重发（**同版本号会被拒**：`slug 冲突: 版本 x.y.z 已存在，请使用新的版本号发布`）。
+
+**iconUrl 也可以用仓库自己的图标**（推荐，摆脱平台托管）：
+
+```
+https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-conversation-manager@main/skills/qoder-conversation-manager/assets/icon-qoder-512.png
+```
+
+- SkillHub **接受外部 iconUrl**，不限自家 CDN。上传接口拿到的 `skill-icons/uploads/...` 地址只是默认路径。
+- 写入是**异步**的：publish 成功后 `skill.iconUrl` 仍可能是旧值，约 30–60 秒后才更新；同一 skill 更新版本可以覆盖。
+- 用 jsdelivr 而不是 `raw.githubusercontent.com`：服务端两种都认，但 jsdelivr 在国内可达性明显更好（raw 实测也能写入，只是加载不稳）。
+- 好处：图标跟仓库走，换平台、换托管都不影响；坏处：`@main` 会随分支变，要冻结就用 tag 或 commit（`@v1.3.6`）。
 
 **分类字段是 `category`，不是 `categoryIds`** —— 这条坑了两次：
 

@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.3.6 — 2026-11-15
+
+图标改指向仓库自身，不再依赖 SkillHub 的图片托管。
+
+- `iconUrl` 由 `skillhub-...cos.accelerate.myqcloud.com/skill-icons/uploads/...` 改为 `cdn.jsdelivr.net/gh/<owner>/<repo>@main/skills/qoder-conversation-manager/assets/icon-qoder-512.png`。
+- 起因：原地址是平台个人上传目录，重新上传图标会生成新 URL、旧地址将来可能失效，且无法在 GitHub / 其他渠道复用。
+- 实测 SkillHub **接受外部 iconUrl**，但写入是异步的（发布后约 30–60 秒才出现在 `skill.iconUrl`）；同一 skill 更新版本可覆盖。
+- 仍无脚本逻辑改动。
+
 ## 1.3.5 — 2026-11-15
 
 修正上架分类字段：普通 Skill 认 `category`，不认 `categoryIds`。
