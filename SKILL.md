@@ -6,7 +6,7 @@ description_en: Manage Qoder desktop sessions and workspaces — rename from ful
 display_name: Qoder会话管理
 display_name_zh: Qoder会话管理
 display_name_en: Qoder Conversation Manager
-version: 1.2.2
+version: 1.2.3
 tags: [Qoder, 会话管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -137,6 +137,8 @@ python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply \
 ### move
 
 ```bash
+# 目标工作区还不存在：按路径新建（目录已存在时加 --allow-missing 则跳过检查）
+python <skill>/scripts/qoder_sessions.py move --to "D:/NewSpace" --create --ids e3d0af7b
 # 单条
 python <skill>/scripts/qoder_sessions.py move --to NAS --ids e3d0af7b
 # 批量按条件（先干跑看清单）
@@ -155,6 +157,8 @@ python <skill>/scripts/qoder_sessions.py move --to VMs --filter "title contains 
 只要元数据时加 `--metadata-only`，此时只改数据库，文件一律不动。
 
 搬空的源项目目录默认自动删除（`--keep-orphans` 可保留），避免 `projects/` 下堆一堆没有会话的空目录。
+
+目标不存在时加 `--create`：按 `--to` 的**绝对路径**建工作区，名称默认取路径末段（`--name` 可改）。目录必须已存在，否则要再加 `--allow-missing`。干跑时只提示、不建行。
 
 已在目标工作区的会话自动跳过；`--ids` 里匹配不到的 ID 会告警。每条会话独立事务，文件搬运失败会把已搬的文件放回原位；记忆合并不可逆，回滚时只提示需人工核对。
 

@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.2.2'
+VERSION = '1.2.3'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -1279,12 +1279,23 @@ def undo_files(recs):
 
 
 def cmd_move(args, con, db_path):
+    pending = None
     ws, cands = find_workspace(con, args.to, include_deleted=False, local_only=True)
     if not ws:
         if cands:
             die('目标工作区名不唯一，请改用 UUID：\n' +
                 '\n'.join(f"  {w['workspace_id']}  {w['name']}  {primary_root(w)}" for w in cands))
-        die(f'未找到目标工作区: {args.to}（可用 workspace new 创建）')
+        if not getattr(args, 'create', False):
+            die(f'未找到目标工作区: {args.to}（加 --create 自动创建，或用 workspace new）')
+        path = os.path.abspath(os.path.normpath(args.to))
+        name = getattr(args, 'name', None) or os.path.basename(path) or path
+        if not os.path.isdir(path) and not getattr(args, 'allow_missing', False):
+            die(f'目录不存在: {path}。确认要在该路径上建工作区就加 --allow-missing')
+        pending = {'id': str(uuid.uuid4()), 'name': name, 'path': path}
+        ws = {'workspace_id': pending['id'], 'name': name, 'workspace_source': 'local',
+              'root_paths_json': json.dumps([path], ensure_ascii=False),
+              'product_mode': 'coding'}
+        out(f'[NOTE] 目标工作区不存在，将新建：{name} -> {path}')
     if not (ws['workspace_source'] or '').startswith('local'):
         die(f'目标工作区是另一台设备的投影（{ws["workspace_source"]}），本机不能作为迁移目标')
     root = primary_root(ws)
@@ -1336,6 +1347,23 @@ def cmd_move(args, con, db_path):
         return 0
 
     gate_running(getattr(args, 'require_closed', False))
+
+    if pending:
+        now = now_ms()
+        w0 = connect(db_path, write=True)
+        try:
+            with w0:
+                w0.execute('insert into workspaces(workspace_id,name,workspace_source,root_paths_json,'
+                           'product_mode,extra_json,created_at,updated_at,archived,deleted_at) '
+                           'values(?,?,?,?,?,?,?,?,0,null)',
+                           (pending['id'], pending['name'], 'local',
+                            json.dumps([pending['path']], ensure_ascii=False), 'coding',
+                            json.dumps({'workspaceIcon': 'folder', 'workspaceColor': 'primary',
+                                        'workspaceIndexEnabled': True}, ensure_ascii=False),
+                            now, now))
+        finally:
+            w0.close()
+        out(f"已创建工作区: {pending['name']} -> {pending['path']}")
 
     # 按对象备份：每条会话存一份完整行，可单条回滚
     base = new_backup_set(db_path, 'move')
@@ -1919,6 +1947,11 @@ def build_parser():
                     help='只改数据库归属，不搬会话文件/记忆/产出')
     mp.add_argument('--keep-orphans', action='store_true', dest='keep_orphans',
                     help='保留搬空的源项目目录（默认自动删除）')
+    mp.add_argument('--create', action='store_true',
+                    help='目标工作区不存在时，按 --to 的路径新建')
+    mp.add_argument('--name', help='配合 --create 指定工作区名（默认取路径末段）')
+    mp.add_argument('--allow-missing', action='store_true', dest='allow_missing',
+                    help='配合 --create，允许目录尚不存在')
 
     wp = sub.add_parser('workspace', parents=[common], help='工作区管理')
     wsub = wp.add_subparsers(dest='ws_cmd', required=True)
