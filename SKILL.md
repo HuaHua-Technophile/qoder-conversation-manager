@@ -128,7 +128,9 @@ python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply \
   --min-title-len 12 --max-title-len 30 --require-prefix                                      # 带长度与前缀约束
 ```
 
-校验规则：非空、长度落在 `--min-title-len` / `--max-title-len`（默认 2–40）、不含引号/书名号/句号/问号/控制字符/路径分隔符；`--require-prefix` 时校验 `^\[[^\[\]]{1,8}\]\s+\S`。**允许不同会话重名**，不去重。
+标题规则：`[短分类] 标题`，短类 2–4 个汉字；不传 `--min-title-len` / `--max-title-len` 时默认按 **20–30 字符**（含前缀和空格）校验。
+
+校验规则：非空、长度落在 `--min-title-len` / `--max-title-len`（默认 20–30，不传参数即按此校验）、不含引号/书名号/句号/问号/控制字符/路径分隔符；`--require-prefix` 时校验 `^\[[^\[\]]{1,8}\]\s+\S`。**允许不同会话重名**，不去重。
 
 **分类约定**：短类 2–4 个汉字，全库收敛在 8–12 个（如 系统/网络/开发/数据/硬件/办公/生活/其他）。前缀计入长度。
 

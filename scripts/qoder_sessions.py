@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.3.0'
+VERSION = '1.3.1'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -661,7 +661,7 @@ def cmd_list(args, con, db_path):
 FORBIDDEN = set('"“”\'‘’《》<>。？?！!\n\r\t/\\|')
 
 
-def validate_title(t, min_len=2, max_len=40, require_prefix=False):
+def validate_title(t, min_len=20, max_len=30, require_prefix=False):
     t = (t or '').strip()
     errs = []
     if not t:
@@ -905,8 +905,8 @@ def rename_apply(args, con, db_path):
             composed = f'[{cat}] {composed}'
         title, errs = validate_title(
             composed,
-            min_len=getattr(args, 'min_title_len', 2),
-            max_len=getattr(args, 'max_title_len', 40),
+            min_len=getattr(args, 'min_title_len', 20),
+            max_len=getattr(args, 'max_title_len', 30),
             require_prefix=getattr(args, 'require_prefix', False),
         )
         if errs:
@@ -1986,8 +1986,8 @@ def build_parser():
     rp.add_argument('--assist-cap', type=int, default=1500, help='单条助手消息保留字符数')
     rp.add_argument('--shards', type=int, default=0,
                     help='导出时按字数做 LPT 均衡分组，生成 shards/groupN.json')
-    rp.add_argument('--min-title-len', type=int, default=2, dest='min_title_len')
-    rp.add_argument('--max-title-len', type=int, default=40, dest='max_title_len')
+    rp.add_argument('--min-title-len', type=int, default=20, dest='min_title_len')
+    rp.add_argument('--max-title-len', type=int, default=30, dest='max_title_len')
     rp.add_argument('--require-prefix', action='store_true', dest='require_prefix',
                     help='要求标题带 [短分类] 前缀')
 
