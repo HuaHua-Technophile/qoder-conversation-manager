@@ -5,7 +5,7 @@
 ## 目录要求
 
 ```
-qoder-conversation-manager/
+qoder-task-manager/
 ├── SKILL.md
 ├── CHANGELOG.md
 ├── README.md
@@ -24,20 +24,20 @@ qoder-conversation-manager/
 
 ## 通用安装
 
-把整个 `qoder-conversation-manager/` 目录放进宿主 agent 的**用户级技能目录**（所有项目可用），或放进项目的技能目录（仅当前项目）。目录名与 `SKILL.md` 里的 `name` 字段保持一致。
+把整个 `qoder-task-manager/` 目录放进宿主 agent 的**用户级技能目录**（所有项目可用），或放进项目的技能目录（仅当前项目）。目录名与 `SKILL.md` 里的 `name` 字段保持一致。
 
 各宿主的目录约定不同，以宿主自己的设置为准。常见形态：
 
 | 宿主 | 用户级目录（示例） |
 |---|---|
-| Qoder | `~/.qoder/skills/qoder-conversation-manager/` |
-| Codex | `~/.codex/skills/qoder-conversation-manager/` |
+| Qoder | `~/.qoder/skills/qoder-task-manager/` |
+| Codex | `~/.codex/skills/qoder-task-manager/` |
 | 其他 | 宿主设置页里「技能 / Skills」标明的目录，通常形如 `~/.<host>/skills/` |
 
 复制命令（Git Bash / macOS / Linux）：
 
 ```bash
-cp -r "<源>/qoder-conversation-manager" "<宿主技能目录>/"
+cp -r "<源>/qoder-task-manager" "<宿主技能目录>/"
 ```
 
 复制后让宿主重新加载技能列表：多数宿主重启任务即可，部分提供 `/skills reload`。
@@ -69,7 +69,7 @@ python "<技能目录>/scripts/qoder_sessions.py" --db "C:/temp/qoder-copy.sqlit
 只保留一份源目录，更新后整体覆盖其他宿主的副本：
 
 ```bash
-SRC="<你的源目录>/qoder-conversation-manager"
+SRC="<你的源目录>/qoder-task-manager"
 cp -r "$SRC" "$HOME/.qoder/skills/"
 [ -d "$HOME/.codex" ] && cp -r "$SRC" "$HOME/.codex/skills/"
 ```

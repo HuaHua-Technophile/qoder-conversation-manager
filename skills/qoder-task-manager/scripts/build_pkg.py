@@ -3,7 +3,7 @@
 """打包成两个市场上架用的 zip。
 
 - -root：zip 根目录直接是 SKILL.md（部分市场要求此形态）
-- -dir：单层目录 qoder-conversation-manager/，内含 SKILL.md（另一些市场要求此形态）
+- -dir：单层目录 qoder-task-manager/，内含 SKILL.md（另一些市场要求此形态）
 
 用法：python scripts/build_pkg.py [--out dist]
 """
@@ -13,8 +13,8 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # skills/<name>/
 REPO = os.path.dirname(os.path.dirname(ROOT))                        # 仓库根
-NAME = 'qoder-conversation-manager'
-VERSION = '1.3.9'
+NAME = 'qoder-task-manager'
+VERSION = '1.4.0'
 
 FILES = ['SKILL.md', 'README.md', 'CHANGELOG.md', 'LICENSE', 'PUBLISHING.md']
 DIRS = ['scripts', 'references', 'examples']

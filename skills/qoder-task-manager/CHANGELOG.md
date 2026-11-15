@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.4.0 — 2026-11-15
+
+项目标识统一为 `qoder-task-manager`。
+
+- 技能标识：`slug` / `name` / 目录名 / GitHub 仓库名，全部由 `qoder-conversation-manager` 改为 `qoder-task-manager`。
+- 英文品牌名：`Qoder Conversation Manager` → `Qoder Task Manager`；中文名仍是「Qoder任务管理」。
+- `iconUrl` 同步指向新仓库路径（jsdelivr）。
+- **这是一次标识变更**：SkillHub 上是新条目，旧 slug `qoder-conversation-manager` 需单独下架；已安装旧版的用户不会自动迁移。
+- 命令、参数、数据库行为全部不变。
+
 ## 1.3.9 — 2026-11-15
 
 英文描述改用 Tasks，纠正 1.3.7 / 1.3.8 的判断错误。
@@ -7,7 +17,7 @@
 - 实测本机 Qoder 0.5.12 的 `app.asar`，i18n 里 `sessions` 这个 key 的中文值是「任务」、英文值是 **`Tasks`**、韩文是「작업」。也就是说 `sessions` 只是代码里的键名，英文界面显示的本来就是 Tasks。
 - 此前认为「英文界面叫 sessions、改成 tasks 会对不上界面」是错的，实际正好相反。
 - `description_en`、`examples_en`、正文英文摘要、README、PUBLISHING 的英文简介统一改为 tasks。
-- 保留不变：`qoder-conversation-manager`（slug/name）、`Qoder Conversation Manager`（英文品牌名）、`chat_sessions` 等数据库标识。
+- 保留不变：`qoder-task-manager`（slug/name）、`Qoder Task Manager`（英文品牌名）、`chat_sessions` 等数据库标识。
 - 无功能改动。
 
 ## 1.3.8 — 2026-11-15
@@ -24,7 +34,7 @@
 
 - 「空间」→「工作区」（6 处），与 Qoder 自身的 workspace 叫法一致。
 - 「对话」「会话」→「任务」（约 200 处），文档、脚本注释与 CLI 输出一并调整。
-- 展示名同步改为「Qoder任务管理」（`displayName` / `display_name` / `display_name_zh`）；`slug` 与 `name` 仍是 `qoder-conversation-manager`，不影响安装与升级。
+- 展示名同步改为「Qoder任务管理」（`displayName` / `display_name` / `display_name_zh`）；`slug` 与 `name` 仍是 `qoder-task-manager`，不影响安装与升级。
 - 英文描述保留 `sessions` / `conversations` 未动：那是 Qoder 英文界面的原生叫法，改成 tasks 反而对不上，也影响英文检索。
 - 无功能改动，命令、参数、退出码、数据库字段全部不变。
 
@@ -32,7 +42,7 @@
 
 图标改指向仓库自身，不再依赖 SkillHub 的图片托管。
 
-- `iconUrl` 由 `skillhub-...cos.accelerate.myqcloud.com/skill-icons/uploads/...` 改为 `cdn.jsdelivr.net/gh/<owner>/<repo>@main/skills/qoder-conversation-manager/assets/icon-qoder-512.png`。
+- `iconUrl` 由 `skillhub-...cos.accelerate.myqcloud.com/skill-icons/uploads/...` 改为 `cdn.jsdelivr.net/gh/<owner>/<repo>@main/skills/qoder-task-manager/assets/icon-qoder-512.png`。
 - 起因：原地址是平台个人上传目录，重新上传图标会生成新 URL、旧地址将来可能失效，且无法在 GitHub / 其他渠道复用。
 - 实测 SkillHub **接受外部 iconUrl**，但写入是异步的（发布后约 30–60 秒才出现在 `skill.iconUrl`）；同一 skill 更新版本可覆盖。
 - 仍无脚本逻辑改动。

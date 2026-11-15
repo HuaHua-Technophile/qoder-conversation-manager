@@ -1,19 +1,19 @@
 <p align="center">
-  <img src="skills/qoder-conversation-manager/assets/banner-1280.png"
+  <img src="skills/qoder-task-manager/assets/banner-1280.png"
        width="100%" alt="Qoder Task Manager — local task and workspace management for AI agents">
 </p>
 
 <p align="center">给 AI Agent 用的 Qoder 本地任务管理技能</p>
 
 <p align="center">
-  <a href="https://github.com/HuaHua-Technophile/qoder-conversation-manager/releases"><img src="https://img.shields.io/github/v/release/HuaHua-Technophile/qoder-conversation-manager?label=release&color=2ea44f" alt="Release"></a>
+  <a href="https://github.com/HuaHua-Technophile/qoder-task-manager/releases"><img src="https://img.shields.io/github/v/release/HuaHua-Technophile/qoder-task-manager?label=release&color=2ea44f" alt="Release"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python"></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-Windows-lightgrey" alt="Platform"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
-  <a href="https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager"><img src="https://img.shields.io/badge/SkillHub-Qoder%E4%BB%BB%E5%8A%A1%E7%AE%A1%E7%90%86-7c6cf0" alt="SkillHub"></a>
+  <a href="https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager"><img src="https://img.shields.io/badge/SkillHub-Qoder%E4%BB%BB%E5%8A%A1%E7%AE%A1%E7%90%86-7c6cf0" alt="SkillHub"></a>
 </p>
 
-<p align="center"><sub>repo / slug: <code>qoder-conversation-manager</code></sub></p>
+<p align="center"><sub>repo / slug: <code>qoder-task-manager</code></sub></p>
 
 <p align="center">
   <a href="#安装">安装</a> ·
@@ -70,8 +70,8 @@ flowchart LR
 技能是纯目录 + Python 标准库脚本，不需要 `pip install`。仓库按 `skills/<技能名>/` 组织（便于 skills.sh 这类目录索引），而宿主要求技能根目录直接是 `SKILL.md`，所以用脚本摊平安装：
 
 ```bash
-git clone https://github.com/HuaHua-Technophile/qoder-conversation-manager.git
-cd qoder-conversation-manager
+git clone https://github.com/HuaHua-Technophile/qoder-task-manager.git
+cd qoder-task-manager
 
 python install.py                 # 装到 ~/.workbuddy/skills
 python install.py --to ~/.qoder/skills
@@ -81,18 +81,18 @@ python install.py --targets all   # WorkBuddy / Qoder / .agents 三处都装
 也可以直接复制技能目录：
 
 ```bash
-cp -r skills/qoder-conversation-manager "$HOME/.workbuddy/skills/"
+cp -r skills/qoder-task-manager "$HOME/.workbuddy/skills/"
 ```
 
 安装后验证：
 
 ```bash
-python "$HOME/.workbuddy/skills/qoder-conversation-manager/scripts/qoder_sessions.py" doctor
+python "$HOME/.workbuddy/skills/qoder-task-manager/scripts/qoder_sessions.py" doctor
 ```
 
 ## 快速开始
 
-以下命令在已安装的技能目录执行（`cd ~/.workbuddy/skills/qoder-conversation-manager`）。
+以下命令在已安装的技能目录执行（`cd ~/.workbuddy/skills/qoder-task-manager`）。
 
 ```bash
 # 1. 体检
@@ -188,13 +188,13 @@ git push origin vX.Y.Z     # GitHub Release + SkillHub 自动完成
 | 文件 | 内容 |
 |---|---|
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | 开发与发布流程：改哪、怎么测、怎么发 |
-| [`SKILL.md`](skills/qoder-conversation-manager/SKILL.md) | 技能主文档：完整命令、工作流、安全规则 |
-| [`references/qoder-storage.md`](skills/qoder-conversation-manager/references/qoder-storage.md) | 表结构、路径编码、写入约定、验证 SQL、已知坑 |
-| [`references/subagent-playbook.md`](skills/qoder-conversation-manager/references/subagent-playbook.md) | 大批量重命名的子智能体切片与派活模板 |
-| [`references/cases.md`](skills/qoder-conversation-manager/references/cases.md) | 真实案例：27 条重命名、13 条跨工作区迁移 |
-| [`references/install.md`](skills/qoder-conversation-manager/references/install.md) | 三端安装与验证 |
-| [`CHANGELOG.md`](skills/qoder-conversation-manager/CHANGELOG.md) | 版本记录 |
-| [`PUBLISHING.md`](skills/qoder-conversation-manager/PUBLISHING.md) | 各渠道发布状态、CLI 发布与 CI 自动化 |
+| [`SKILL.md`](skills/qoder-task-manager/SKILL.md) | 技能主文档：完整命令、工作流、安全规则 |
+| [`references/qoder-storage.md`](skills/qoder-task-manager/references/qoder-storage.md) | 表结构、路径编码、写入约定、验证 SQL、已知坑 |
+| [`references/subagent-playbook.md`](skills/qoder-task-manager/references/subagent-playbook.md) | 大批量重命名的子智能体切片与派活模板 |
+| [`references/cases.md`](skills/qoder-task-manager/references/cases.md) | 真实案例：27 条重命名、13 条跨工作区迁移 |
+| [`references/install.md`](skills/qoder-task-manager/references/install.md) | 三端安装与验证 |
+| [`CHANGELOG.md`](skills/qoder-task-manager/CHANGELOG.md) | 版本记录 |
+| [`PUBLISHING.md`](skills/qoder-task-manager/PUBLISHING.md) | 各渠道发布状态、CLI 发布与 CI 自动化 |
 
 ## 环境要求
 
@@ -213,8 +213,8 @@ git push origin vX.Y.Z     # GitHub Release + SkillHub 自动完成
 
 | 渠道 | 状态 | 入口 |
 |---|---|---|
-| GitHub | 已发布，含两个 zip | [Releases](https://github.com/HuaHua-Technophile/qoder-conversation-manager/releases) |
-| SkillHub | 已上架 | [详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager) |
+| GitHub | 已发布，含两个 zip | [Releases](https://github.com/HuaHua-Technophile/qoder-task-manager/releases) |
+| SkillHub | 已上架 | [详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager) |
 | WorkBuddy 开放平台 | 手动更新 | [控制台](https://open.workbuddy.cn/skill/all) |
 | skills.sh | 按仓库自动索引 | 无手动入口 |
 

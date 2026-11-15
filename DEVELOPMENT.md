@@ -1,14 +1,14 @@
 # 开发指南
 
-这个仓库是 `qoder-conversation-manager` 的**唯一源码**。所有改动都从这里出发，推上去自动发布。
+这个仓库是 `qoder-task-manager` 的**唯一源码**。所有改动都从这里出发，推上去自动发布。
 
 ## 一、目录结构：符号链接，只有一份代码
 
-`~/.workbuddy/skills/qoder-conversation-manager` 是指向本仓库的**符号链接**：
+`~/.workbuddy/skills/qoder-task-manager` 是指向本仓库的**符号链接**：
 
 ```
-~/.workbuddy/skills/qoder-conversation-manager
-        └─(symlink)→ C:/Users/HuaHua/dev/qoder-conversation-manager/skills/qoder-conversation-manager
+~/.workbuddy/skills/qoder-task-manager
+        └─(symlink)→ C:/Users/HuaHua/dev/qoder-task-manager/skills/qoder-task-manager
 ```
 
 改仓库里的文件，等于直接改运行时——不用复制、不用重装、不用重启 WorkBuddy（新会话即生效）。
@@ -16,7 +16,7 @@
 确认当前是不是链接：
 
 ```powershell
-Get-Item "$HOME\.workbuddy\skills\qoder-conversation-manager" | Select-Object LinkType, Target
+Get-Item "$HOME\.workbuddy\skills\qoder-task-manager" | Select-Object LinkType, Target
 ```
 
 新机器上重建：
@@ -42,7 +42,7 @@ Windows 建符号链接需要**开发者模式**或管理员权限。
 ### 1. 改之前先拉最新
 
 ```bash
-cd C:/Users/HuaHua/dev/qoder-conversation-manager
+cd C:/Users/HuaHua/dev/qoder-task-manager
 git pull
 ```
 
@@ -52,18 +52,18 @@ git pull
 
 | 文件 | 作用 |
 |---|---|
-| `skills/qoder-conversation-manager/SKILL.md` | 技能定义，agent 读它决定何时触发、怎么执行 |
-| `skills/qoder-conversation-manager/scripts/qoder_sessions.py` | 全部功能实现（单文件） |
-| `skills/qoder-conversation-manager/references/*.md` | 深入参考：存储结构、安装、案例、子代理话术 |
-| `skills/qoder-conversation-manager/CHANGELOG.md` | 变更记录，发版必写 |
-| `skills/qoder-conversation-manager/PUBLISHING.md` | 各渠道发布规则与踩坑记录 |
+| `skills/qoder-task-manager/SKILL.md` | 技能定义，agent 读它决定何时触发、怎么执行 |
+| `skills/qoder-task-manager/scripts/qoder_sessions.py` | 全部功能实现（单文件） |
+| `skills/qoder-task-manager/references/*.md` | 深入参考：存储结构、安装、案例、子代理话术 |
+| `skills/qoder-task-manager/CHANGELOG.md` | 变更记录，发版必写 |
+| `skills/qoder-task-manager/PUBLISHING.md` | 各渠道发布规则与踩坑记录 |
 
 ### 3. 本地验证（关键：别动真库）
 
 只读命令可以直接跑：
 
 ```bash
-cd skills/qoder-conversation-manager
+cd skills/qoder-task-manager
 python scripts/qoder_sessions.py doctor
 python scripts/qoder_sessions.py list --limit 5
 ```
@@ -92,7 +92,7 @@ python scripts/qoder_sessions.py rename --db /tmp/test.sqlite --ids xxx --apply
 ### 5. 提交推送
 
 ```bash
-cd C:/Users/HuaHua/dev/qoder-conversation-manager
+cd C:/Users/HuaHua/dev/qoder-task-manager
 git add -A
 git commit -m "feat(vX.Y.Z): 一句话说明"
 git push
@@ -112,14 +112,14 @@ release   job → 校验版本号 → 打包两个 zip → 建 GitHub Release
 skillhub  job → 装 CLI → 登录 → 剔除 assets → 发布 → 等审核
 ```
 
-看进度：<https://github.com/HuaHua-Technophile/qoder-conversation-manager/actions>
+看进度：<https://github.com/HuaHua-Technophile/qoder-task-manager/actions>
 
 ### 7. 更新自己用的版本
 
 SkillHub 审核通过后（通常几分钟），在 WorkBuddy 技能市场里点「更新」，或：
 
 ```bash
-skillhub install qoder-conversation-manager --namespace user_3c4d2464
+skillhub install qoder-task-manager --namespace user_3c4d2464
 ```
 
 ## 四、发布后各渠道
@@ -131,7 +131,7 @@ skillhub install qoder-conversation-manager --namespace user_3c4d2464
 | skills.sh | ✅ 被动 | 自己扫仓库，无提交入口，收录时机不可控 |
 | WorkBuddy 开放平台 | ❌ 手动 | 无 API/CLI，只能控制台上传 `-dir` 包，且当日限 5 次 |
 
-WorkBuddy 那次需要手动：拿 `dist/qoder-conversation-manager-dir-<版本>.zip` 到 <https://open.workbuddy.cn/skill/all> 点「更新版本」。
+WorkBuddy 那次需要手动：拿 `dist/qoder-task-manager-dir-<版本>.zip` 到 <https://open.workbuddy.cn/skill/all> 点「更新版本」。
 
 ## 五、踩过的坑
 

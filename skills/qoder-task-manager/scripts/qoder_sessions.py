@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 
-VERSION = '1.3.9'
+VERSION = '1.4.0'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -1965,7 +1965,7 @@ def build_parser():
                    help='备份与临时产物根目录（默认 <当前工作目录>/qoder-cm-backups）')
     p.add_argument('--qoder-home',
                    help='Qoder 数据根目录（默认 ~/.qoder），用于指向沙箱副本')
-    p.add_argument('--version', action='version', version=f'qoder-conversation-manager {VERSION}')
+    p.add_argument('--version', action='version', version=f'qoder-task-manager {VERSION}')
     sub = p.add_subparsers(dest='cmd', required=True)
 
     # 允许把 --db/--json/--require-closed 写在子命令后面；SUPPRESS 避免覆盖主解析器的值

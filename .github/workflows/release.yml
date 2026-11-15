@@ -38,8 +38,8 @@ jobs:
 
       - name: Check tag matches VERSION
         run: |
-          PKG_VERSION=$(python -c "import re,pathlib;print(re.search(r\"VERSION = '([^']+)'\", pathlib.Path('skills/qoder-conversation-manager/scripts/build_pkg.py').read_text()).group(1))")
-          SKILL_VERSION=$(python -c "import re,pathlib;print(re.search(r'^version:\s*(\S+)', pathlib.Path('skills/qoder-conversation-manager/SKILL.md').read_text(), re.M).group(1))")
+          PKG_VERSION=$(python -c "import re,pathlib;print(re.search(r\"VERSION = '([^']+)'\", pathlib.Path('skills/qoder-task-manager/scripts/build_pkg.py').read_text()).group(1))")
+          SKILL_VERSION=$(python -c "import re,pathlib;print(re.search(r'^version:\s*(\S+)', pathlib.Path('skills/qoder-task-manager/SKILL.md').read_text(), re.M).group(1))")
           TAG_VERSION="${{ steps.ref.outputs.version }}"
           echo "tag=$TAG_VERSION build_pkg=$PKG_VERSION SKILL.md=$SKILL_VERSION"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ] || [ "$TAG_VERSION" != "$SKILL_VERSION" ]; then
@@ -48,10 +48,10 @@ jobs:
           fi
 
       - name: Doctor (sanity check script imports)
-        run: python skills/qoder-conversation-manager/scripts/qoder_sessions.py --version
+        run: python skills/qoder-task-manager/scripts/qoder_sessions.py --version
 
       - name: Build packages
-        run: python skills/qoder-conversation-manager/scripts/build_pkg.py
+        run: python skills/qoder-task-manager/scripts/build_pkg.py
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -109,16 +109,16 @@ jobs:
           # assets/ 只是仓库与 README 的展示图，不属于技能内容；
           # SkillHub 不接受 png 等二进制文件，直接打包会被拒。
           rm -rf /tmp/pub && mkdir -p /tmp/pub
-          cp -r skills/qoder-conversation-manager /tmp/pub/
-          rm -rf /tmp/pub/qoder-conversation-manager/assets
+          cp -r skills/qoder-task-manager /tmp/pub/
+          rm -rf /tmp/pub/qoder-task-manager/assets
           echo "打包内容："
-          find /tmp/pub/qoder-conversation-manager -type f | sed 's|/tmp/pub/||' | sort
+          find /tmp/pub/qoder-task-manager -type f | sed 's|/tmp/pub/||' | sort
 
           # SkillHub 偶发 524（网关超时）但服务端其实已处理完，重试会报「版本已存在」。
           # 把这两种情况都当作成功，避免红叉误导。
           for attempt in 1 2 3; do
             set +e
-            OUT=$(skillhub publish /tmp/pub/qoder-conversation-manager \
+            OUT=$(skillhub publish /tmp/pub/qoder-task-manager \
                     --host https://api.skillhub.cn \
                     --changelog "$CHANGELOG" 2>&1)
             CODE=$?

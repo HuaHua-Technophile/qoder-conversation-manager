@@ -1,16 +1,16 @@
 ---
-slug: qoder-conversation-manager
+slug: qoder-task-manager
 displayName: Qoder任务管理
 summary: 管理 Qoder 桌面端任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。
-iconUrl: https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-conversation-manager@main/skills/qoder-conversation-manager/assets/icon-qoder-512.png
+iconUrl: https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-task-manager@main/skills/qoder-task-manager/assets/icon-qoder-512.png
 category: dev-programming
-name: qoder-conversation-manager
+name: qoder-task-manager
 description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
 description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。默认干跑，按对象备份，拒绝影子任务。
 description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
 display_name: Qoder任务管理
 display_name_zh: Qoder任务管理
-display_name_en: Qoder Conversation Manager
+display_name_en: Qoder Task Manager
 examples_zh:
   - "把标题太短的 Qoder 任务批量重命名"
   - "把 NAS 相关的任务都归到 NAS 工作区，附件和产出一起带过去"
@@ -20,7 +20,7 @@ examples_en:
   - "Move all NAS-related tasks into the NAS workspace, files included"
   - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.3.9
+version: 1.4.0
 tags: [Qoder, 任务管理, 重命名, 工作区, SQLite]
 license: MIT
 ---
@@ -61,13 +61,13 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 
 ## 安装
 
-> 仓库里技能位于 `skills/qoder-conversation-manager/`，安装时用仓库根的 `python install.py` 摊平复制到宿主目录；宿主只认「技能目录根部有 SKILL.md」的扁平形态。
+> 仓库里技能位于 `skills/qoder-task-manager/`，安装时用仓库根的 `python install.py` 摊平复制到宿主目录；宿主只认「技能目录根部有 SKILL.md」的扁平形态。
 
 把整个目录放进宿主 agent 的用户级技能目录即可。目录约定由宿主决定，例如：
 
 ```
-~/.qoder/skills/qoder-conversation-manager/
-~/.codex/skills/qoder-conversation-manager/
+~/.qoder/skills/qoder-task-manager/
+~/.codex/skills/qoder-task-manager/
 ```
 
 各宿主对 SKILL.md 的解析规则一致，同一份目录可直接复用；具体路径以宿主自己的设置页为准。详见 `references/install.md`。

@@ -6,8 +6,8 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 v1.3.6 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release |
-| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.6<br>⏳ v1.3.7 审核中 | 已全自动，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
+| GitHub | ✅ 已发布 v1.3.6 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release |
+| SkillHub（skillhub.cn） | ✅ 已上架 v1.3.6<br>⏳ v1.3.7 审核中 | 已全自动，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已改用 `skills/<name>/` 布局，等它下次扫描 |
 | WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 1.3.5 | 能力 ID `os_f2f623a10e63b114`，公开。**今日提审额度已满 5/5**（当月 5/20），次日恢复后可传 `-dir` 包 |
 | Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
@@ -15,8 +15,8 @@
 
 ## 提交材料
 
-- **标识名**：`qoder-conversation-manager`（小写字母、数字、连字符）
-- **中文名**：`Qoder任务管理`　**英文名**：`Qoder Conversation Manager`
+- **标识名**：`qoder-task-manager`（小写字母、数字、连字符）
+- **中文名**：`Qoder任务管理`　**英文名**：`Qoder Task Manager`
 - **版本**：见 `SKILL.md` 的 `version`
 - **分类**：开发工具 / 效率工具 / 数据管理
 - **许可证**：MIT
@@ -69,12 +69,12 @@ python3 ~/.skillhub/skills_store_cli.py auth whoami
 **frontmatter 要求**：平台只读 `slug` / `version` / `displayName` / `summary` / `description` / `tags` / `license` / `homepage` 这几个**驼峰**字段，WorkBuddy 用的 `display_name`、`description_zh` 它**不认**。所以 SKILL.md 头部必须同时写两套：
 
 ```yaml
-slug: qoder-conversation-manager      # 全网唯一，kebab-case
+slug: qoder-task-manager      # 全网唯一，kebab-case
 displayName: Qoder任务管理              # 驼峰，平台用
 summary: ……                            # 平台列表页简介
 iconUrl: https://…png                  # 图标，先调 skill-icons/upload 拿
 categoryIds: [dev-programming]         # 分类 key 数组
-name: qoder-conversation-manager      # 下划线族，WorkBuddy 用
+name: qoder-task-manager      # 下划线族，WorkBuddy 用
 display_name: Qoder任务管理
 ```
 
@@ -121,7 +121,7 @@ if isinstance(_subs, list):
 **iconUrl 也可以用仓库自己的图标**（推荐，摆脱平台托管）：
 
 ```
-https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-conversation-manager@main/skills/qoder-conversation-manager/assets/icon-qoder-512.png
+https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-task-manager@main/skills/qoder-task-manager/assets/icon-qoder-512.png
 ```
 
 - SkillHub **接受外部 iconUrl**，不限自家 CDN。上传接口拿到的 `skill-icons/uploads/...` 地址只是默认路径。
@@ -154,15 +154,15 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 1. 打开 <https://open.workbuddy.cn>，完成开发者认证（个人：身份材料 + 人脸）。
 2. 左侧「发布管理 → 技能 → 创建」。
-3. 上传压缩包。**要求：解压后第一层就是技能目录**，即 `qoder-conversation-manager/SKILL.md`，且只允许两级目录。用 `-dir` 包。
+3. 上传压缩包。**要求：解压后第一层就是技能目录**，即 `qoder-task-manager/SKILL.md`，且只允许两级目录。用 `-dir` 包。
 4. 平台自动解析 `SKILL.md` 的 frontmatter，以下字段缺一不可（本仓库已齐）：
 
    | 字段 | 本仓库取值 |
    |---|---|
-   | `name` | `qoder-conversation-manager` |
+   | `name` | `qoder-task-manager` |
    | `version` | 与发布版本一致 |
    | `display_name` | `Qoder任务管理`（中文展示名） |
-   | `display_name_en` | `Qoder Conversation Manager` |
+   | `display_name_en` | `Qoder Task Manager` |
    | `description_zh` | 中文描述 |
    | `description_en` | 英文描述 |
 
@@ -182,7 +182,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 1. Qoder → 扩展 → 技能 → 添加技能 → 上传 Skill。
 2. 支持 `.zip` / `.skill` / `SKILL.md`，**一次一项，不能传文件夹**。
-3. 也可以直接把目录放到 `~/.qoder/skills/qoder-conversation-manager/`。
+3. 也可以直接把目录放到 `~/.qoder/skills/qoder-task-manager/`。
 
 **上架公开市场**：
 
@@ -193,20 +193,20 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ## 渠道四：第三方目录（可选）
 
-- **skills.sh**：`npx skills add HuaHua-Technophile/qoder-conversation-manager` 即可安装，收录后出现在目录索引。
+- **skills.sh**：`npx skills add HuaHua-Technophile/qoder-task-manager` 即可安装，收录后出现在目录索引。
 - **skillstore.io**：<https://skillstore.io/submit> 填仓库地址，自动扫描后人工审核。
 - **Skill Vault**：<https://skillvault.md> 登录后上传 `SKILL.md`。
 
 ## 打包
 
 ```bash
-python skills/qoder-conversation-manager/scripts/build_pkg.py
+python skills/qoder-task-manager/scripts/build_pkg.py
 ```
 
 产物：
 
-- `dist/qoder-conversation-manager-dir-<版本>.zip`：单层目录，**WorkBuddy 与 Qoder 都用这个**
-- `dist/qoder-conversation-manager-root-<版本>.zip`：SKILL.md 在根，供要求扁平结构的目录使用
+- `dist/qoder-task-manager-dir-<版本>.zip`：单层目录，**WorkBuddy 与 Qoder 都用这个**
+- `dist/qoder-task-manager-root-<版本>.zip`：SKILL.md 在根，供要求扁平结构的目录使用
 
 > 两个包内容一致，只差一层目录。上传报「结构不符合」时换另一个再试。
 
@@ -225,9 +225,9 @@ python skills/qoder-conversation-manager/scripts/build_pkg.py
 
 ```bash
 # 1) 改三处版本号，缺一处 CI 会直接失败
-#    skills/qoder-conversation-manager/SKILL.md      → version:
-#    skills/qoder-conversation-manager/scripts/qoder_sessions.py → VERSION
-#    skills/qoder-conversation-manager/scripts/build_pkg.py      → VERSION
+#    skills/qoder-task-manager/SKILL.md      → version:
+#    skills/qoder-task-manager/scripts/qoder_sessions.py → VERSION
+#    skills/qoder-task-manager/scripts/build_pkg.py      → VERSION
 # 2) 写 CHANGELOG
 git add -A && git commit -m "feat(vX.Y.Z): ..."
 git push
@@ -240,7 +240,7 @@ CI 会先校验 tag 与两处 `VERSION` 是否一致，再打包上传；不一�
 需要补发历史版本或重跑时，用 `workflow_dispatch` 手动指定 tag：
 
 ```bash
-gh workflow run Release --repo HuaHua-Technophile/qoder-conversation-manager -f tag=v1.3.7
+gh workflow run Release --repo HuaHua-Technophile/qoder-task-manager -f tag=v1.3.7
 ```
 
 **SkillHub 自动发布的两个坑**
