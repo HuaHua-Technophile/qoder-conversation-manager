@@ -23,15 +23,16 @@
 
 **中文简介**
 
-> 管理 Qoder 桌面端任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。
+> 管理 Qoder 桌面端任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。内置增量判定，可直接挂定时任务每天自动整理标题——改过名的任务只要之后又对话过就会重新判断。
 
 **英文简介**
 
-> Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, with dry-run default and per-object backups.
+> Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, with dry-run default and per-object backups. Built-in incremental rename lets it run on a daily schedule: any task talked to again since its last rename is re-evaluated.
 
 **适用场景**
 
 - 侧栏标题只反映第一句话，批量重命名
+- **挂定时任务，每天自动把标题跟上内容**（改过名的任务被问及新话题后会自动重判）
 - 把同一主题的任务归入对应工作区（含文件、记忆、产出）
 - 新建 / 调整 / 清理工作区
 - 改库前体检与回滚

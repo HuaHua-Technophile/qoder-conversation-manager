@@ -1,27 +1,29 @@
 ---
 slug: qoder-task-manager
 displayName: Qoder任务管理
-summary: 管理 Qoder 桌面端任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚，默认干跑并按对象备份。
+summary: 管理 Qoder 桌面端任务与工作区：按完整任务历史重命名、迁移归属、备份回滚；内置增量判定，可直接挂定时任务每天自动整理标题。
 iconUrl: https://cdn.jsdelivr.net/gh/HuaHua-Technophile/qoder-task-manager@main/skills/qoder-task-manager/assets/icon-qoder-512.png
 category: dev-programming
 name: qoder-task-manager
-description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
-description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。默认干跑，按对象备份，拒绝影子任务。
-description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, create/retarget/delete workspaces, backup & rollback, and a 7-point doctor. Dry-run by default with automatic backups.
+description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、七项体检。支持增量重命名（rename --pending），可挂定时任务每天自动整理，已改过名的任务只要之后又对话过就会重新判断。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检、每天自动重命名、挂个定时任务整理标题」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
+description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、七项体检。内置增量判定与改名留痕，可直接挂定时任务每天自动整理——已改过名的任务，只要之后又对话过就会重新判断。默认干跑，按对象备份，拒绝影子任务。
+description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, and a 7-point doctor. Ships with incremental rename (--pending) so it can run on a daily schedule: any task that has been talked to again since its last rename is re-evaluated automatically. Dry-run by default with automatic backups.
 display_name: Qoder任务管理
 display_name_zh: Qoder任务管理
 display_name_en: Qoder Task Manager
 examples_zh:
   - "把标题太短的 Qoder 任务批量重命名"
+  - "每天帮我自动整理 Qoder 任务标题，挂个定时任务"
   - "把 NAS 相关的任务都归到 NAS 工作区，附件和产出一起带过去"
   - "给 Qoder 做一次体检，看工作区路径和备份有没有异常"
 examples_en:
   - "Batch rename Qoder tasks whose titles are too short"
+  - "Set up a daily job that keeps Qoder task titles tidy"
   - "Move all NAS-related tasks into the NAS workspace, files included"
   - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.4.4
-tags: [Qoder, 任务管理, 重命名, 工作区, SQLite]
+version: 1.6.0
+tags: [Qoder, 任务管理, 重命名, 工作区, SQLite, 定时任务, 自动化]
 license: MIT
 ---
 
@@ -36,7 +38,7 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 |---|---|---|
 | `doctor` | 七项体检：库、WAL、表结构、进程、工作区路径、影子任务、备份 | 否 |
 | `list` | 列出任务，支持六维筛选 | 否 |
-| `rename --export` | 导出完整任务历史，供 agent 生成标题 | 否 |
+| `rename --export` | 导出完整任务历史，供 agent 生成标题（`--pending` 增量） | 否 |
 | `rename --import` | 把 titles.json 写回，并锁定标题来源 | 是 |
 | `move` | 迁移任务：改归属 + 搬任务文件、项目记忆、产出（`--metadata-only` 只改库） | 是 |
 | `repair` | 补齐历史「只改库没搬文件」的任务：按当前 cwd 把文件/记忆/产出归位 | 文件 |
@@ -44,6 +46,16 @@ move to a workspace, create/rename/retarget/archive/delete workspaces, backup/ro
 | `backup` / `rollback` | 整库快照与恢复 | 是 |
 
 **不做什么**：不删任务（只做工作区级联软删除）、不改任务正文、不操作另一台设备的影子任务。
+
+## 为什么适合挂定时任务
+
+标题不是一次定终身的事——任务今天聊 A、下周又聊 B，旧标题迟早与实际内容脱节。本技能为此做了三件事：
+
+1. **增量判定不靠"今天"**：基准是每条任务的 `extra_json.qoderCm.renamedAt`（上次写入/确认时间）。只要之后又产生过新对话就重新判断，哪怕一个月前改的名、哪怕跨零点。
+2. **可收敛，不抖动**：重新判断后标题仍合适的走 `[SAME]`，只刷新判断时间不动标题；否则同一批任务会每轮被反复导出。
+3. **失手可回滚**：每轮落盘按对象备份，单条 `rollback --manifest`、整批 `rollback --batch`。
+
+配套用法见「典型工作流 → 定时增量重命名」。
 
 ## 核心事实（改库前必须知道）
 
@@ -117,6 +129,26 @@ python <skill>/scripts/qoder_sessions.py rename --export --out ./qoder-extract
 # 可限定范围
 python <skill>/scripts/qoder_sessions.py rename --export --filter "status = active" --out ./exp
 ```
+
+**增量模式（定时任务用）**——只导出「值得改名」的任务，避免每轮重读已定稿的长任务：
+
+```bash
+python <skill>/scripts/qoder_sessions.py rename --export --pending --out ./exp
+python <skill>/scripts/qoder_sessions.py rename --export --pending --pending-since 2026-11-01 --out ./exp
+```
+
+候选 = 本地 + 未删除 + 非影子，且满足其一：
+
+- 标题**未定稿**（`titleSource != custom`）；
+- **上次判断之后又产生过新对话**——判定基准是 `extra_json.qoderCm.renamedAt`（本技能上次写入/确认的时间），**不是「今天零点」**。所以「一个月前改过名、今天又追加对话」的任务照样会被重新判断，跨零点、跨天都不会漏。
+
+只有**没有改名留痕**的老任务（v1.4.x 改名、或 Qoder 自带的 `ai` 标题已定稿）才退回 `--pending-since` 兜底窗口（默认 `yesterday`）：这些任务一旦被重新判断，就会写入留痕，之后按精确时间比较。
+
+导出结果打印命中原因（`标题未定稿` / `上次判断后又有新对话` / `近期有新对话（无改名留痕）`）与跳过统计（`已定稿且无新对话 N 条` / `人工标题 N 条` / `空任务 N 条`），每个 `.txt` 头部也有 `PICK_REASON`、`LAST_MESSAGE_AT`、`CREATED_AT`。
+
+**留痕与收敛**：`--apply` 在 `extra_json.qoderCm` 写 `{title, renamedAt, by}`。若某条任务重新判断后**标题仍合适**，也会刷新 `renamedAt`（输出 `[SAME]`），否则下一轮会因为「比上次判断新」被反复导出。
+
+**人工改名**：默认不特殊对待——只要之后又对话过就重新判断。要保护手改标题，加 `--respect-manual`（`titleSource` 仍为 custom 且与记录不符时视为手改，跳过）。
 
 导出目录里每个任务一个 `.txt`（含 SESSION_ID、现有标题、标题来源、工作区、cwd、消息数、用户轮数、完整任务），外加 `index.json`。
 
@@ -260,6 +292,20 @@ python <skill>/scripts/qoder_sessions.py rename --export --out ./exp
 python <skill>/scripts/qoder_sessions.py rename --import titles.json          # 先看清单
 python <skill>/scripts/qoder_sessions.py rename --import titles.json --apply
 ```
+
+**定时增量重命名（每天跑）**
+
+```bash
+python <skill>/scripts/qoder_sessions.py doctor --json
+python <skill>/scripts/qoder_sessions.py rename --export --pending --out ./auto/$(date +%Y%m%d-%H%M)
+# agent 读 ./auto/<时间戳>/*.txt，产出 titles.json（必须读完整个任务再定名）
+python <skill>/scripts/qoder_sessions.py rename --import ./auto/<时间戳>/titles.json \
+  --require-prefix --min-title-len 20 --max-title-len 30            # 干跑校验
+python <skill>/scripts/qoder_sessions.py rename --import ./auto/<时间戳>/titles.json \
+  --require-prefix --min-title-len 20 --max-title-len 30 --apply    # 落盘
+```
+
+注意：Qoder 侧栏要重启才显示新标题；定时任务里**只提示、不自动重启 Qoder**。
 
 **按主题给任务归类到工作区**
 

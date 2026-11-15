@@ -26,7 +26,9 @@
 
 一个给 AI Agent 用的技能：管理本机 **Qoder** 的任务与工作区——七项体检、六维筛选、按完整任务历史两步式重命名、跨工作区迁移（连同文件、项目记忆和产出）、工作区增删改、整库备份与回滚。
 
-> A portable agent skill for managing local **Qoder** tasks and workspaces: doctor, list/filter, two-step rename from full transcripts, move between workspaces with files and memory, backup & rollback.
+标题不该一次定终身。从 v1.6.0 起内置**增量判定**：task 改过名之后只要又对话过，就会被重新判断——所以它能直接挂到定时任务上，每天自动把标题跟着内容走。
+
+> A portable agent skill for managing local **Qoder** tasks and workspaces: doctor, list/filter, two-step rename from full transcripts, move between workspaces with files and memory, backup & rollback. Built-in incremental rename so it can run on a daily schedule.
 
 ---
 
@@ -59,6 +61,7 @@ flowchart LR
 ## 亮点
 
 - **两步式重命名**：`rename --export` 导出完整历史，Agent 生成 `titles.json`，`rename --import` 写回；默认只打印计划，`--apply` 才落盘。
+- **可挂定时任务**：`rename --export --pending` 只导出「标题未定稿」和「上次判断后又被对话过」的任务。判定基准是每条任务的上次改名时间，不是"今天零点"——一个月前改过名、今天又聊起来，照样会被重新判断。标题仍合适时走 `[SAME]` 只刷新判断时间，不会来回抖动。
 - **自动分片**：按字数做 LPT 均衡分片，大批量任务可交给多个子智能体并行处理。
 - **真迁移**：`move` 默认搬会话 JSONL、同名子目录、该任务写入的项目记忆与产出；旧路径留硬链接，历史链接不断。
 - **七项体检**：数据库、WAL、表结构、进程、工作区路径、影子任务、备份；`--deep` 再加查会话文件、目录一致性、项目记忆、产出索引。
@@ -122,6 +125,32 @@ python scripts/qoder_sessions.py rename --import titles.json --apply
 
 `sid` 支持完整 UUID 或前 8 位；`new_title` 可不带前缀，`category` 会自动补成 `[分类] 标题`。标题默认长度 **20–30 字**，可用 `--min-title-len` / `--max-title-len` 调整。
 
+## 挂定时任务（增量重命名）
+
+不必每轮都重读全部历史。`--pending` 会自己挑出「值得看一眼」的任务：
+
+```bash
+# 只导出增量候选：标题未定稿的 + 上次判断之后又被对话过的
+python scripts/qoder_sessions.py rename --export --pending --out ./exp
+
+# Agent 读 ./exp/*.txt 生成 titles.json 后，照常干跑 → 落盘
+python scripts/qoder_sessions.py rename --import ./exp/titles.json --require-prefix
+python scripts/qoder_sessions.py rename --import ./exp/titles.json --require-prefix --apply
+```
+
+判定规则（这是它敢挂定时的原因）：
+
+| 情形 | 是否重新判断 |
+|---|---|
+| 标题未定稿（`titleSource != custom`） | ✅ 总是 |
+| 改过名，之后又对话过（哪怕隔了一个月、跨了零点） | ✅ 命中「上次判断后又有新对话」 |
+| 改过名，之后没再说过话 | ⏭ 跳过 |
+| 上次判断后标题仍然贴切 | 走 `[SAME]`，只刷新判断时间，不动标题 |
+
+留痕写在 `extra_json.qoderCm = {title, renamedAt, by}`。老任务（v1.4.x 改过名、没有留痕）退回 `--pending-since` 兜底窗口，默认吃「昨天」以来，第一次被重新判断后即补上留痕。
+
+放进 WorkBuddy / 系统计划任务里，每天跑一次即可；Qoder 侧栏重启后按数据库重建，才看得到新标题。
+
 ## 迁移与工作区
 
 ```bash
@@ -151,7 +180,7 @@ python scripts/qoder_sessions.py rollback --backup ./qoder-cm-backups/db/<快照
 |---|---|---|
 | `doctor` | 七项体检；`--deep` 加查会话文件、目录一致性、项目记忆、产出索引 | 否 |
 | `list` | 六维筛选：关键词 / 工作区 / cwd / 时间 / 标题来源 / 影子 | 否 |
-| `rename --export` | 导出完整历史，按字数 LPT 自动分片 | 否 |
+| `rename --export` | 导出完整历史，按字数 LPT 自动分片；`--pending` 只导增量候选，适合定时任务 | 否 |
 | `rename --import` | 写回标题并锁定来源标记；默认干跑，`--apply` 落盘 | 是 |
 | `move` | 迁移任务：归属 + 会话文件 + 项目记忆 + 产出 | 是 |
 | `workspace` | `list` / `new` / `rename` / `retarget` / `archive` / `unarchive` / `delete` | 部分 |
@@ -213,10 +242,11 @@ git push origin vX.Y.Z     # GitHub Release + SkillHub 自动完成
 
 | 渠道 | 状态 | 入口 |
 |---|---|---|
-| GitHub | 已发布，含两个 zip | [Releases](https://github.com/HuaHua-Technophile/qoder-task-manager/releases) |
+| GitHub | 已发布 v1.6.0，含两个 zip | [Releases](https://github.com/HuaHua-Technophile/qoder-task-manager/releases) |
 | SkillHub | 已上架 | [详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-task-manager) |
-| WorkBuddy 开放平台 | 手动更新 | [控制台](https://open.workbuddy.cn/skill/all) |
-| skills.sh | 按仓库自动索引 | 无手动入口 |
+| WorkBuddy 开放平台 | 手动更新（无 API） | [控制台](https://open.workbuddy.cn/skill/all) |
+| skills.sh | 按 `npx skills add` 安装量自动索引，无手动入口 | 等扫描 |
+| Qoder 技能市场 | 待提交 | 客户端可先自用 |
 
 仓库已接入 [`.github/workflows/release.yml`](.github/workflows/release.yml)：push `v*` tag 自动校验版本、构建 zip、发 GitHub Release，并同步发布到 SkillHub。WorkBuddy 开放平台无 API / CLI，只能手动上传 `-dir` 包。
 

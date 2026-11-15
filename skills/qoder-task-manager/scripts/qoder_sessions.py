@@ -17,9 +17,9 @@ import subprocess
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
-VERSION = '1.4.4'
+VERSION = '1.6.0'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
@@ -245,6 +245,15 @@ def message_stats(con):
         return {r[0]: (r[1], r[2]) for r in con.execute(
             'select session_id, count(*), sum(case when role="user" then 1 else 0 end) '
             'from chat_session_messages group by session_id')}
+    except sqlite3.Error:
+        return {}
+
+
+def message_last(con):
+    """每个任务最后一条消息的时间（ms），用于增量判断「最近有没有新对话」。"""
+    try:
+        return {r[0]: int(r[1] or 0) for r in con.execute(
+            'select session_id, max(created_at) from chat_session_messages group by session_id')}
     except sqlite3.Error:
         return {}
 
@@ -775,6 +784,60 @@ def write_shards(outdir, index, n):
     return info
 
 
+def parse_since(expr):
+    """today / yesterday / YYYY-MM-DD → 当天本地零点（ms）。"""
+    e = (expr or 'today').strip().lower()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if e in ('today', '今日'):
+        d = today
+    elif e in ('yesterday', '昨日'):
+        d = today - timedelta(days=1)
+    else:
+        try:
+            d = datetime.strptime((expr or '').strip(), '%Y-%m-%d')
+        except ValueError:
+            die('--pending-since 需要 today / yesterday / YYYY-MM-DD')
+    return int(d.timestamp() * 1000)
+
+
+def pending_rows(con, rows, since_ms, respect_manual=False):
+    """增量候选：上次判断之后又产生过新对话的 + 标题未定稿的。
+
+    判定基准是「上次判断时间」而不是「今天零点」——
+    只要该任务在上一轮判断之后又被对话过，就重新判断一次，
+    哪怕它早就被改过名。基准取 extra_json.qoderCm.renamedAt；
+    老版本改过、没有留痕的任务退回 --pending-since。
+
+    只有 --respect-manual 时，才跳过「标题被手工改过」的任务
+    （titleSource 仍为 custom 且与记录不一致，说明不是 Qoder 自动重生成的）。
+    """
+    last = message_last(con)
+    stats = message_stats(con)
+    picked, skip = [], {'已定稿且无新对话': 0, '空任务': 0, '人工标题': 0}
+    for r in rows:
+        e = load_json(r['extra_json'])
+        cm = e.get('qoderCm') or {}
+        src = e.get('titleSource') or ''
+        cur = (r['title'] or '').strip()
+        last_ms = last.get(r['session_id']) or (r['updated_at'] or 0)
+        base = int(cm.get('renamedAt') or 0) or since_ms
+
+        if respect_manual and cm.get('title') and src == 'custom' and cm['title'] != cur:
+            skip['人工标题'] += 1
+            continue
+        if stats.get(r['session_id'], (0, 0))[1] == 0:
+            skip['空任务'] += 1
+            continue
+        if src != 'custom':
+            picked.append((r, '标题未定稿', last_ms))
+        elif last_ms > base:
+            why = '上次判断后又有新对话' if cm.get('renamedAt') else '近期有新对话（无改名留痕）'
+            picked.append((r, why, last_ms))
+        else:
+            skip['已定稿且无新对话'] += 1
+    return picked, skip
+
+
 def cmd_rename(args, con, db_path):
     if args.export:
         return rename_export(args, con, db_path)
@@ -786,6 +849,7 @@ def cmd_rename(args, con, db_path):
 def rename_export(args, con, db_path):
     ws_map = {w['workspace_id']: w for w in load_workspaces(con, include_deleted=True)}
     stats = message_stats(con)
+    lasts = message_last(con)
     rows = session_rows(con, include_deleted=False, include_peer=False)
 
     if args.ids:
@@ -802,11 +866,23 @@ def rename_export(args, con, db_path):
             rows = apply_filter(rows, parse_filter(args.filter))
         except FilterError as ex:
             die(str(ex))
+
+    reasons, skip = {}, {}
+    since_ms = 0
+    if getattr(args, 'pending', False):
+        since_ms = parse_since(getattr(args, 'pending_since', None))
+        picked, skip = pending_rows(con, rows, since_ms,
+                                    respect_manual=getattr(args, 'respect_manual', False))
+        reasons = {r['session_id']: why for r, why, _ in picked}
+        rows = [r for r, _, _ in picked]
+
     if args.limit:
         rows = rows[:args.limit]
 
     if not rows:
         out('没有匹配的任务')
+        if reasons == {} and skip:
+            out('增量筛选：' + '，'.join(f'{k} {v} 条' for k, v in skip.items() if v))
         return 0
 
     outdir = args.out or os.path.join(os.getcwd(), 'qoder-extract')
@@ -815,13 +891,17 @@ def rename_export(args, con, db_path):
     for r in rows:
         e = load_json(r['extra_json'])
         msgs, users = stats.get(r['session_id'], (0, 0))
+        last_ms = lasts.get(r['session_id']) or 0
         body = [
             f"SESSION_ID: {r['session_id']}",
             f"CURRENT_TITLE: {(r['title'] or '').strip()}",
             f"TITLE_SOURCE: {e.get('titleSource', '')}",
+            f"PICK_REASON: {reasons.get(r['session_id'], '-')}",
             f"WORKSPACE: {r['_ws_name'] or '(无工作区)'}",
             f"CWD: {r['cwd']}",
+            f"CREATED_AT: {fmt_ms(r['created_at'])}",
             f"UPDATED_AT: {fmt_ms(r['updated_at'])}",
+            f"LAST_MESSAGE_AT: {fmt_ms(last_ms)}",
             f"MSG_COUNT: {msgs}",
             f"USER_TURNS: {users}",
             '===== 完整任务历史（时间顺序）=====',
@@ -833,7 +913,9 @@ def rename_export(args, con, db_path):
             f.write(text)
         index.append({'sid': r['session_id'], 'short': r['session_id'][:8],
                       'title': (r['title'] or '').strip(), 'title_source': e.get('titleSource'),
-                      'workspace': r['_ws_name'], 'messages': msgs, 'user_turns': users,
+                      'reason': reasons.get(r['session_id']), 'workspace': r['_ws_name'],
+                      'last_message_at': last_ms,
+                      'messages': msgs, 'user_turns': users,
                       'bytes': os.path.getsize(path), 'chars': len(text),
                       'file': os.path.basename(path)})
 
@@ -846,10 +928,18 @@ def rename_export(args, con, db_path):
 
     if args.json:
         print(json.dumps({'out_dir': outdir, 'count': len(index), 'items': index,
-                          'shards': shard_info}, ensure_ascii=False, indent=2))
+                          'shards': shard_info, 'skipped': skip}, ensure_ascii=False, indent=2))
         return 0
     out(f'已导出 {len(index)} 个任务的完整历史 -> {outdir}')
     out(f'索引文件: {os.path.join(outdir, "index.json")}')
+    if reasons:
+        out('')
+        out('增量筛选命中：')
+        for it in index:
+            out(f"  {it['short']}  {it['reason']}  {it['title'][:34]}")
+    if skip and any(skip.values()):
+        out('')
+        out('增量筛选跳过：' + '，'.join(f'{k} {v} 条' for k, v in skip.items() if v))
     if shard_info:
         out('')
         out(f'已按字数均衡切成 {len(shard_info)} 片（LPT）：')
@@ -879,7 +969,7 @@ def rename_apply(args, con, db_path):
     by_short = {r['session_id'][:8]: r for r in all_rows}
     full_ids = {r['session_id'] for r in all_rows}
 
-    plan, skipped = [], []
+    plan, touched, skipped = [], [], []
     for it in data:
         sid = str(it.get('sid') or '').strip()
         if not sid:
@@ -915,8 +1005,18 @@ def rename_apply(args, con, db_path):
         if errs:
             skipped.append((sid[:8], '；'.join(errs), title))
             continue
-        if title == (row['title'] or '').strip():
-            skipped.append((sid[:8], '与现标题相同', title))
+        cur_title = (row['title'] or '').strip()
+        meta_row = load_json(row['extra_json']) or {}
+        cm = meta_row.get('qoderCm') or {}
+        if getattr(args, 'respect_manual', False) and cm.get('title') \
+                and (meta_row.get('titleSource') or '') == 'custom' and cm['title'] != cur_title:
+            skipped.append((sid[:8], '标题已被手工修改（--respect-manual 生效），已跳过', title))
+            continue
+        if title == cur_title:
+            # 标题没变但这条任务刚被重新判断过：刷新「上次判断时间」并认领，
+            # 否则下一轮还会因为「比 renamedAt 新」被反复导出。
+            touched.append((row['session_id'], cur_title))
+            skipped.append((sid[:8], '与现标题相同（仅刷新判断时间）', title))
             continue
         plan.append((row['session_id'], row['title'], title))
 
@@ -924,13 +1024,14 @@ def rename_apply(args, con, db_path):
 
     if args.json:
         print(json.dumps({'plan': [{'sid': s, 'old': o, 'new': n} for s, o, n in plan],
+                          'touched': [{'sid': s, 'title': t} for s, t in touched],
                           'skipped': [{'sid': s, 'reason': r} for s, r, _ in skipped]},
                          ensure_ascii=False, indent=2))
         if not args.apply_flag:
             return 0
 
     if not args.json:
-        out(f'待写入 {len(plan)} 条，跳过 {len(skipped)} 条')
+        out(f'待写入 {len(plan)} 条，标题不变仅刷新判断时间 {len(touched)} 条，跳过 {len(skipped)} 条')
         out('')
         for sid, old, new in plan:
             out(f'  {sid[:8]}  旧: {(old or "")[:40]}')
@@ -954,9 +1055,14 @@ def rename_apply(args, con, db_path):
         mp = backup_row(con, 'chat_sessions', 'session_id', sid, base)
         if mp:
             manifests[sid] = os.path.basename(mp)
+    for sid, _t in touched:
+        mp = backup_row(con, 'chat_sessions', 'session_id', sid, base)
+        if mp:
+            manifests.setdefault(sid, os.path.basename(mp))
 
     w = connect(db_path, write=True)
     results = []
+    ts = now_ms()
     try:
         for sid, old, new in plan:
             try:
@@ -966,6 +1072,8 @@ def rename_apply(args, con, db_path):
                     e['titleResolved'] = True
                     e['titleSource'] = 'custom'
                     e['titleRevision'] = int(e.get('titleRevision') or 0) + 1
+                    # 留痕：记录本技能写入的标题与时间，供增量识别「已定稿 / 人工改过」
+                    e['qoderCm'] = {'title': new, 'renamedAt': ts, 'by': f'qoder-task-manager {VERSION}'}
                     w.execute('update chat_sessions set title=?, extra_json=? where session_id=?',
                               (new, json.dumps(e, ensure_ascii=False, separators=(',', ':')), sid))
                 chk = w.execute('select title, extra_json from chat_sessions where session_id=?',
@@ -982,19 +1090,34 @@ def rename_apply(args, con, db_path):
                                 'status': 'failed', 'error': str(ex),
                                 'manifest': manifests.get(sid)})
                 out(f'[FAIL] {sid[:8]}  {ex}')
+        # 标题未变、但已重新判断过的任务：只刷新判断时间并认领标题来源
+        for sid, t in touched:
+            try:
+                with w:
+                    row = w.execute('select extra_json from chat_sessions where session_id=?', (sid,)).fetchone()
+                    e = load_json(row['extra_json'] if row else '{}')
+                    e['titleResolved'] = True
+                    e['titleSource'] = 'custom'
+                    e['qoderCm'] = {'title': t, 'renamedAt': ts, 'by': f'qoder-task-manager {VERSION}'}
+                    w.execute('update chat_sessions set extra_json=? where session_id=?',
+                              (json.dumps(e, ensure_ascii=False, separators=(',', ':')), sid))
+                results.append({'session_id': sid, 'title': t, 'status': 'unchanged',
+                                'manifest': manifests.get(sid)})
+                out(f'[SAME] {sid[:8]}  {t}')
+            except Exception as ex:
+                results.append({'session_id': sid, 'title': t, 'status': 'failed', 'error': str(ex),
+                                'manifest': manifests.get(sid)})
+                out(f'[FAIL] {sid[:8]}  {ex}')
     finally:
         w.close()
 
     batch = write_batch_manifest(base, results, note='rename')
     ok_n = sum(1 for x in results if x['status'] == 'ok')
-    bad_n = len(results) - ok_n
+    same_n = sum(1 for x in results if x['status'] == 'unchanged')
+    bad_n = len(results) - ok_n - same_n
     out('')
-    out(f'完成：成功 {ok_n}，失败/异常 {bad_n}，共 {len(results)} 条')
+    out(f'完成：改名 {ok_n}，标题不变 {same_n}，失败/异常 {bad_n}，共 {len(results)} 条')
     out(f'备份与清单: {base}')
-    if not metadata_only:
-        out('已按默认策略搬运：任务文件 → 项目目录；项目记忆 → 合并到目标项目；产出 → 新工作区（旧路径留链接）')
-        if removed:
-            out(f'已清理 {len(removed)} 个空项目目录')
     out(f'单条回滚: rollback --manifest "{os.path.join(base, "items", "chat_sessions-<sid>.json")}"')
     out(f'整批回滚: rollback --batch "{batch}"')
     post_write_hint('标题')
@@ -2010,6 +2133,13 @@ def build_parser():
     rp.add_argument('--out', help='导出目录')
     rp.add_argument('--ids', help='逗号分隔的任务 ID 前缀')
     rp.add_argument('--filter', help='筛选表达式')
+    rp.add_argument('--pending', action='store_true',
+                    help='增量模式：只导出「标题未定稿」或「指定时间后新增过对话」的本地任务')
+    rp.add_argument('--pending-since', dest='pending_since', default='yesterday',
+                    help='仅对没有改名留痕的老任务生效的兜底窗口：today / yesterday / YYYY-MM-DD'
+                         '（默认 yesterday，避免 23:00 之后到零点的对话被漏掉）')
+    rp.add_argument('--respect-manual', dest='respect_manual', action='store_true',
+                    help='跳过「标题被手工改过」的任务（默认不跳：只要又有新对话就重新判断）')
     rp.add_argument('--limit', type=int)
     rp.add_argument('--user-cap', type=int, default=4000, help='单条用户消息保留字符数')
     rp.add_argument('--assist-cap', type=int, default=1500, help='单条助手消息保留字符数')
