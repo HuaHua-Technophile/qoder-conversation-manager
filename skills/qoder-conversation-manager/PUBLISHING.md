@@ -6,7 +6,7 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| GitHub | ✅ 已发布 v1.3.5 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，[Release v1.3.5](https://github.com/HuaHua-Technophile/qoder-conversation-manager/releases/tag/v1.3.5) 含两个安装包 |
+| GitHub | ✅ 已发布 v1.3.6 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT。**已接 Actions**：push tag `v*` 自动打包并发 Release |
 | SkillHub（skillhub.cn） | ✅ 已上架 v1.3.5<br>⏳ v1.3.6 审核中 | CLI 发布，skillId=322033。[详情页](https://skillhub.cn/skills/user_3c4d2464/qoder-conversation-manager)。图标取自仓库（jsdelivr），分类「开发编程」 |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核仍 404。该站按 `npx skills add` 安装量索引，**无手动上传入口**；仓库已改用 `skills/<name>/` 布局，等它下次扫描 |
 | WorkBuddy 开放平台 | ✅ 已发布 v1.3.3<br>⏳ 待更新 1.3.5 | 能力 ID `os_f2f623a10e63b114`，公开。**今日提审额度已满 5/5**（当月 5/20），次日恢复后可传 `-dir` 包 |
@@ -212,22 +212,46 @@ python skills/qoder-conversation-manager/scripts/build_pkg.py
 
 ## 版本发布流程
 
+**自动化程度一览**
+
+| 渠道 | 推 GitHub 后自动更新 | 机制 |
+|---|---|---|
+| GitHub Release | ✅ 全自动 | `.github/workflows/release.yml`，push tag `v*` 即打包并发布 |
+| skills.sh | ✅ 被动自动 | 无接口，它自己扫仓库，推上去等它收录 |
+| SkillHub | ⚠️ 可自动但未开 | 有 CLI 可挂 Actions，需把 API Token 存 `SKILLHUB_KEY` secret |
+| WorkBuddy 开放平台 | ❌ 只能手动 | 官方文档确认无 API / CLI / CI，仅控制台上传 zip，另有提审额度 |
+
+**标准流程（GitHub 全自动）**
+
 ```bash
-# 1) 改 SKILL.md 的 version 与 CHANGELOG
-# 2) 同步脚本里的 VERSION
-python skills/qoder-conversation-manager/scripts/build_pkg.py
+# 1) 改三处版本号，缺一处 CI 会直接失败
+#    skills/qoder-conversation-manager/SKILL.md      → version:
+#    skills/qoder-conversation-manager/scripts/qoder_sessions.py → VERSION
+#    skills/qoder-conversation-manager/scripts/build_pkg.py      → VERSION
+# 2) 写 CHANGELOG
 git add -A && git commit -m "feat(vX.Y.Z): ..."
 git push
-gh release create vX.Y.Z dist/*.zip --title "vX.Y.Z — 摘要" --notes "..."
-# 3) 到各平台重新上传 zip，版本号与 SKILL.md 保持一致
+git tag -a vX.Y.Z -m "vX.Y.Z — 摘要"
+git push origin vX.Y.Z          # ← 到这里 GitHub Release 自动完成
 ```
+
+CI 会先校验 tag 与两处 `VERSION` 是否一致，再打包上传；不一致会 `::error::` 中止，不会发出错版包。
+
+需要补发历史版本或重跑时，用 `workflow_dispatch` 手动指定 tag：
+
+```bash
+gh workflow run Release --repo HuaHua-Technophile/qoder-conversation-manager -f tag=v1.3.6
+```
+
+之后按需手动处理两个外部渠道：SkillHub 传包（或后续接 Actions）、WorkBuddy 控制台上传 `-dir` 包。
 
 ## 发布前自检
 
-- [ ] `SKILL.md` 的 `version` = 本次发布版本
+- [ ] 三处版本号一致：`SKILL.md` / `qoder_sessions.py` / `build_pkg.py`（CI 会挡，但本地先改省一次失败）
 - [ ] `python scripts/qoder_sessions.py doctor` 通过
-- [ ] `python skills/qoder-conversation-manager/scripts/build_pkg.py` 重新打包
-- [ ] 解压 zip 确认第一层目录名与 `name` 一致
-- [ ] frontmatter 六个必填字段齐全
-- [ ] 头像尺寸与大小合规
+- [ ] `CHANGELOG.md` 已写下本版条目（Release notes 由 CI 自动生成，Changelog 仍是主要说明）
+- [ ] 本地 `python scripts/build_pkg.py` 跑一次，确认能打出两个 zip
+- [ ] frontmatter 必填字段齐全：WorkBuddy 要 `name`/`display_name`/`display_name_en`/`description`/`description_zh`/`description_en`/`version`/`author`；SkillHub 要 `slug`/`version`/`displayName`
+- [ ] 用到 `iconUrl` 时确认地址可达（`curl -I`）
+- [ ] 打 tag 后看 Actions 跑绿，再处理 SkillHub / WorkBuddy 两个外部渠道
 - [ ] 提交后用新会话实测：能识别何时触发、命令能跑通
