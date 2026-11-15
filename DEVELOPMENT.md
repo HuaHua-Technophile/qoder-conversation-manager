@@ -2,14 +2,33 @@
 
 这个仓库是 `qoder-conversation-manager` 的**唯一源码**。所有改动都从这里出发，推上去自动发布。
 
-## 一、先分清两个目录
+## 一、目录结构：符号链接，只有一份代码
 
-| 路径 | 是什么 | 能不能改 |
-|---|---|---|
-| `X:/qoder-conversation-manager/repo`（本仓库） | 源码 + git 历史 | ✅ 只在这里改 |
-| `~/.workbuddy/skills/qoder-conversation-manager` | 从 SkillHub 装的**运行时** | ❌ 不要改，市场更新会覆盖 |
+`~/.workbuddy/skills/qoder-conversation-manager` 是指向本仓库的**符号链接**：
 
-运行时目录里会出现 `_icon.png`、`_meta.json`、`_skillhub_meta.json`，那是 SkillHub 装出来的标记，**不属于源码**。往那儿写代码有两个后果：改动静默丢失、本地 CLI 发布因 `_icon.png` 被平台拒（png 不是允许的文件类型）。
+```
+~/.workbuddy/skills/qoder-conversation-manager
+        └─(symlink)→ X:/qoder-conversation-manager/repo/skills/qoder-conversation-manager
+```
+
+改仓库里的文件，等于直接改运行时——不用复制、不用重装、不用重启 WorkBuddy（新会话即生效）。
+
+确认当前是不是链接：
+
+```powershell
+Get-Item "$HOME\.workbuddy\skills\qoder-conversation-manager" | Select-Object LinkType, Target
+```
+
+新机器上重建：
+
+```bash
+python install.py --link        # 符号链接（开发用）
+python install.py               # 复制安装（分发用）
+```
+
+Windows 建符号链接需要**开发者模式**或管理员权限。
+
+`doctor` / `rename` 的备份默认落在技能目录，也就是仓库内，已在 `.gitignore` 排除 `qoder-cm-backups/`。想放别处用 `--backup-dir`。
 
 ## 二、环境
 
@@ -128,6 +147,8 @@ WorkBuddy 那次需要手动：拿 `dist/qoder-conversation-manager-dir-<版本>
 **524 是假失败**：Cloudflare 网关超时，但服务端往往已经处理完。CI 已加重试 + 「版本已存在即视为成功」的判断，看到红叉先查 SkillHub 上有没有该版本。
 
 **`skillhub publish` 会打包整个目录**：临时文件、`__pycache__`、`dist/` 都会进去。发布前确认目录干净。
+
+**符号链接依赖网络盘**：`X:` 是笔记本的 SMB 共享，笔记本关机或离线时链接断掉，WorkBuddy 会读不到这个技能。要彻底离线可用，把仓库迁到本地磁盘再重建链接。
 
 ## 六、改完之后
 

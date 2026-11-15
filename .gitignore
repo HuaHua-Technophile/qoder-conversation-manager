@@ -12,3 +12,6 @@ exp/
 titles*.json
 !titles.example.json
 dist/
+
+# 运行时产物：技能目录已用符号链接指向仓库，doctor/rename 的备份会落在这里
+qoder-cm-backups/
