@@ -7,7 +7,7 @@
 | 平台 | 状态 | 说明 |
 |---|---|---|
 | GitHub | ✅ 已发布 | [仓库](https://github.com/HuaHua-Technophile/qoder-conversation-manager)，MIT，Release 含两个安装包 |
-| skills.sh（Vercel Labs 目录） | ✅ 已收录 | `npx skills add` 可装；榜单更新有延迟 |
+| skills.sh（Vercel Labs 目录） | ⚠️ 未收录 | 2026-11-15 复核：技能页提示不在该仓库下，发布者页 404。该站按 `npx skills add` 安装量索引，无手动提交入口；根目录 SKILL.md 的布局可能不被识别为仓库内的 skill。 |
 | WorkBuddy 开放平台 | ⏳ 待提交 | 需开发者认证；提审有配额（当日 5 次 / 当月 20 次） |
 | Qoder 技能市场 | ⏳ 待提交 | 客户端「扩展 → 技能 → 添加技能」可先自用；公开市场走拓展发布 |
 | skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
