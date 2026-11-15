@@ -7,7 +7,7 @@
 | 平台 | 状态 | 说明 |
 |---|---|---|
 | GitHub | ✅ 已发布 v1.7.0 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。Actions run `43736889949`，`release` + `skillhub` 两个 job 全绿（16:41:32 → 16:42:11Z）；[Release](https://github.com/HuaHua-Technophile/qoder-task-manager/releases/tag/v1.7.0) 两个 zip：`dir` 87,564 B / `root` 87,146 B |
-| SkillHub（skillhub.cn） | ✅ 已发布 v1.7.0（安全审核通过） | CI 自动发布。API 实测 `latestVersion.version=1.7.0`、9 个 tag 均指向 1.7.0、`category=dev-programming`、`iconUrl` 走 jsdelivr、`securityReports`（keen / sanbu）均 `benign`「安全，无风险」。**下载端点仍返回 1.6.0**（过审快照/CDN 滞后，以 API 为准） |
+| SkillHub（skillhub.cn） | ✅ 已发布 v1.7.0（安全审核通过） | CI 自动发布。API 实测 `latestVersion.version=1.7.0`、8 个 tag 条目（`latest` + 7 个标签）均指向 1.7.0、`category=dev-programming`、`iconUrl` 走 jsdelivr、`securityReports`（keen / sanbu）均 `benign`「安全，无风险」。**下载端点仍返回 1.6.0**（过审快照/CDN 滞后，以 API 为准） |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录（2026-11-16 复核仍 404） | 该站按 `npx skills add` 安装量索引，**无手动上传入口**；搜索页只回显查询词、无结果条目，详情页 404。仓库已是 `skills/<name>/` 布局，等它下次扫描 |
 | WorkBuddy 开放平台 | ⏳ 待更新 v1.7.0 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**。本轮自动化通道不可用（见下方「GUI 通道故障记录」），需人工上传；包已就绪：`dist/qoder-task-manager-dir-1.7.0.zip` |
 | Qoder 技能市场 | ⏳ 待提交（本地已装 1.7.0） | 公开市场走拓展发布；本机 `~/.qoder/skills/qoder-task-manager` 已 `install.py` 同步到 1.7.0 |
