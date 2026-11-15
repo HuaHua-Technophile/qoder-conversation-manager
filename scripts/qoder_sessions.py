@@ -313,6 +313,9 @@ def list_backups(db_path):
     pattern = db_path + '.bak-*'
     items = []
     for p in glob.glob(pattern):
+        # -wal / -shm 是 SQLite 侧车文件，不是备份
+        if p.endswith('-wal') or p.endswith('-shm'):
+            continue
         items.append((os.path.getmtime(p), p))
     items.sort(reverse=True)
     return [p for _, p in items]
