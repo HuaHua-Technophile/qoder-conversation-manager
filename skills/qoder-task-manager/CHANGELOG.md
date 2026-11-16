@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.7.1 — 2026-11-16
+
+纯元数据修复，**1.7.0 的功能与 CLI 行为无任何变化**。起因是 WorkBuddy 开放平台拒绝上传 1.7.0 的包：
+
+- **`SKILL.md` 的 `description_en` 导致严格 YAML 解析失败**：该字段是不加引号的 plain scalar，正文里写了 `... on a daily schedule: any task ...`，其中「半角冒号 + 空格」在 YAML 里是嵌套 mapping 的开头，解析器直接报 `mapping values are not allowed in this context`（平台侧显示为 `frontmatter 无法解析`，行号按去掉开头 `---` 后计，正好指到这一行）。改为破折号：`on a daily schedule — any task`，语义不变。选改写而不是加引号，是因为 SkillHub 会把 frontmatter 的值当展示文案直接渲染，加引号有把引号带进页面的风险。
+- **SkillHub 一直没报错的原因**：它只按正则取 camelCase 字段，从不跑 YAML 解析，所以这个隐患从 1.6.0 起就在包里，只是此前没人把包传给 WorkBuddy。
+- **新增 frontmatter lint 测试**（`tests/test_qoder_sessions.py` 的 `TestSkillFrontmatter`，纯标准库、不引入 PyYAML 依赖）：`test_frontmatter_parses_as_mapping` 按最小充分判据校验——未加引号的顶层值不得出现 `: `，也不得有制表符、`空格+#`、结尾冒号；引号要闭合；`[` 开头的 flow sequence 要用 `]` 收尾；键不得重复。`test_required_fields_present` 覆盖两个市场各自要读的 12 个字段（`name/version/display_name/display_name_zh/display_name_en/description/description_zh/description_en/slug/displayName/author/license`）且都非空。`test_version_matches_script` 复用 `TestVersion` 的版本比对，不重复造。已用改动前的 `:` 写法验证该用例确实会红。
+- **版本号三处同步到 1.7.1**：`qoder_sessions.py` 的 `VERSION`、`SKILL.md` 的 `version:`、`build_pkg.py` 的 `VERSION_FALLBACK`。
+- 1.7.0 已发布到 GitHub 与 SkillHub，包不能就地改，因此重发 1.7.1，让 GitHub / SkillHub 上的制品与「可被 WorkBuddy 接受」的包完全一致。
+
 ## 1.7.0 — 2026-11-16
 
 审计后的一次迭代：24 项修复 + 端到端测试套件。按「数据安全 / 输出契约 / 功能正确性 / 健壮性 / 工程化」五组推进，**全部在副本库与独立夹具上验证，真实库零写入**。

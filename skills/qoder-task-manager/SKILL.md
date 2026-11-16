@@ -7,7 +7,7 @@ category: dev-programming
 name: qoder-task-manager
 description: 管理本机 Qoder 的任务与工作区：列出与筛选任务、按完整任务历史重命名、把任务迁移到指定工作区、新建/改名/改路径/归档/删除工作区、整库备份与回滚、体检（七项基础 + 五项深度检查）。支持增量重命名（rename --pending），可挂定时任务每天自动整理，已改过名的任务只要之后又对话过就会重新判断。当用户说「重命名 Qoder 任务、给任务改标题、整理任务名称、移动任务、换工作区、改归属、把任务放到某个工作区、新建工作区、改工作区路径、删除工作区、列出 Qoder 任务、Qoder 体检、每天自动重命名、挂个定时任务整理标题」时使用。只操作 Qoder 桌面端的本地数据（Windows）。
 description_zh: 管理 Qoder 桌面端本地任务与工作区：按完整任务历史重命名、迁移归属、新建与维护工作区、备份回滚、体检（七项基础 + 五项深度检查）。内置增量判定与改名留痕，可直接挂定时任务每天自动整理——已改过名的任务，只要之后又对话过就会重新判断。默认干跑，按对象备份，拒绝影子任务。
-description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, and a doctor with 7 base checks plus 5 deep checks. Ships with incremental rename (--pending) so it can run on a daily schedule: any task that has been talked to again since its last rename is re-evaluated automatically. Dry-run by default with automatic backups.
+description_en: Manage Qoder desktop tasks and workspaces — rename from full transcripts, move between workspaces, backup & rollback, and a doctor with 7 base checks plus 5 deep checks. Ships with incremental rename (--pending) so it can run on a daily schedule — any task that has been talked to again since its last rename is re-evaluated automatically. Dry-run by default with automatic backups.
 display_name: Qoder任务管理
 display_name_zh: Qoder任务管理
 display_name_en: Qoder Task Manager
@@ -22,7 +22,7 @@ examples_en:
   - "Move all NAS-related tasks into the NAS workspace, files included"
   - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.7.0
+version: 1.7.1
 tags: [Qoder, 任务管理, 重命名, 工作区, SQLite, 定时任务, 自动化]
 license: MIT
 homepage: https://github.com/HuaHua-Technophile/qoder-task-manager

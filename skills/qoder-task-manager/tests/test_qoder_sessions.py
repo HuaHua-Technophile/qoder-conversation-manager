@@ -662,18 +662,243 @@ class TestDoctor(CliTestCase):
         self.assertIn('orphan-empty', checks['孤立项目目录']['detail'])
 
 
-# ---------------------------------------------------------------- 10 版本号
+# ---------------------------------------------------------------- 10 版本号 + frontmatter
+#
+# v1.7.0 的 SKILL.md 把 `description_en` 写成一段未加引号的 plain scalar，中间带着
+# 半角冒号 + 空格（`... on a daily schedule: any task ...`）。YAML 规范里 plain
+# scalar 不允许出现 `: `——它会被当成嵌套 mapping 的开头，于是 WorkBuddy 开放平台
+# 上传时报 `frontmatter 无法解析 / mapping values are not allowed in this context`
+# 直接拒包。SkillHub 只按正则取 camelCase 字段、从不跑 YAML 解析，所以这个雷从
+# v1.6.0 起就埋在包里，直到第一次上传 WorkBuddy 才炸。
+#
+# 下面用最小判据把这类写法焊死，纯标准库实现，不给测试套件引入 PyYAML 依赖。
+
+FM_FENCE = '---'
+FM_KEY = re.compile(r'^([A-Za-z_][\w-]*):\s*(.*)$')
+
+try:                     # 严格解析只在装了 PyYAML 的环境里跑，不给测试套件加硬依赖
+    import yaml
+except ImportError:      # CI / 干净环境：相关用例 skipped，手搓断言仍然兜底
+    yaml = None
+
+
+def frontmatter_lines():
+    """返回 SKILL.md frontmatter 的每一行（第一个 --- 与第二个 --- 之间，不含分隔线）。"""
+    with open(SKILL_MD, encoding='utf-8') as f:
+        text = f.read()
+    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    if not lines or lines[0].strip() != FM_FENCE:
+        raise AssertionError('SKILL.md 必须以 --- 开头：WorkBuddy 只认带 frontmatter 的包')
+    for i in range(1, len(lines)):
+        if lines[i].strip() == FM_FENCE:
+            return lines[1:i]
+    raise AssertionError('SKILL.md frontmatter 缺少结束的 ---')
+
+
+def frontmatter_text():
+    """frontmatter 的原始文本（真解析器直接吃这一份，与平台读到的内容一致）。"""
+    return '\n'.join(frontmatter_lines())
+
+
+def _unquote(value):
+    """剥掉成对外层引号；引号内的转义按 YAML 单/双引号规则还原。"""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        inner = value[1:-1]
+        if value[0] == '"':
+            return inner.replace('\\"', '"').replace('\\\\', '\\')
+        return inner.replace("''", "'")
+    return value
+
+
+def frontmatter_map():
+    """把 frontmatter 解析成 dict：标量是 str，block sequence（`  - x`）是 list[str]。
+
+    值统一剥掉成对外层引号，否则长度断言会被引号带偏；flow sequence
+    （`tags: [a, b]`）保持原字符串，交给 `as_items()` 拆。
+    """
+    fm = {}
+    current = None
+    for line in frontmatter_lines():
+        if not line.strip():
+            continue                      # 空行
+        if line.startswith((' ', '\t')):
+            if current is None:
+                raise AssertionError(f'frontmatter 出现没有归属键的序列项：{line!r}')
+            if not isinstance(fm[current], list):
+                fm[current] = []
+            fm[current].append(_unquote(re.sub(r'^-\s+', '', line.strip())))
+            continue
+        m = FM_KEY.match(line)
+        if not m:
+            raise AssertionError(f'frontmatter 顶层行不是 key: value 形状：{line!r}')
+        current = m.group(1)
+        fm[current] = _unquote(m.group(2).strip())
+    return fm
+
+
+def as_items(value, key=''):
+    """把「block sequence 列表」或「flow sequence 字符串」统一成字符串列表。"""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.startswith('[') and value.endswith(']'):
+        inner = value[1:-1].strip()
+        return [_unquote(x.strip()) for x in inner.split(',')] if inner else []
+    raise AssertionError(f'{key} 不是序列（既非 block sequence 也非 flow sequence）：{value!r}')
+
+
+def skill_md_version():
+    """SKILL.md 的 version 值（版本号三处一致的其中一处，供两处测试复用）。"""
+    return frontmatter_map()['version']
+
 
 class TestVersion(unittest.TestCase):
 
     def test_single_source_of_truth(self):
         with open(SCRIPT, encoding='utf-8') as f:
             script_version = re.search(r"^VERSION = '([^']+)'", f.read(), re.M).group(1)
-        with open(SKILL_MD, encoding='utf-8') as f:
-            skill_version = re.search(r'^version:\s*(\S+)', f.read(), re.M).group(1)
+        skill_version = skill_md_version()
         self.assertEqual(script_version, build_pkg.VERSION)
         self.assertEqual(script_version, skill_version)
-        self.assertEqual(script_version, '1.7.0')
+        self.assertEqual(script_version, '1.7.1')
+
+
+class TestSkillFrontmatter(unittest.TestCase):
+    """SKILL.md 的 frontmatter 必须能被严格的 YAML 解析器吃下去。
+
+    这是 WorkBuddy 开放平台上传的前置条件：解析失败直接拒包。SkillHub 侧不跑
+    YAML、只看正则，所以只有这一组用例能兜住「包能发出去但传不上去」。
+    """
+
+    # 平台侧真正会读的 19 个键：WorkBuddy 的头部卡片还吃 summary / iconUrl，
+    # SkillHub 吃 slug / displayName / category / homepage / tags，示例列表两边都渲染。
+    REQUIRED_SCALAR = [
+        'name', 'version',
+        'display_name', 'display_name_zh', 'display_name_en',
+        'description', 'description_zh', 'description_en',
+        'slug', 'displayName', 'summary', 'iconUrl',
+        'category', 'homepage', 'author', 'license',
+    ]
+    REQUIRED_BLOCK_SEQ = ['examples_zh', 'examples_en']
+    REQUIRED_FLOW_SEQ = ['tags']
+    REQUIRED = REQUIRED_SCALAR + REQUIRED_BLOCK_SEQ + REQUIRED_FLOW_SEQ
+    EXPECTED_KEYS = 19
+
+    def _assert_plain_scalar_safe(self, value, line):
+        """未加引号的值：不许有 `: `、制表符、` #`；也不许用 YAML 指示符开头。"""
+        if not value:
+            return                        # 空值合法：后面跟 block sequence
+        if value[0] in ('"', "'"):
+            self.assertEqual(value[0], value[-1], f'引号未闭合：{line!r}')
+            return
+        self.assertNotIn(
+            ': ', value,
+            f'未加引号的值里出现「半角冒号 + 空格」，YAML 会当成嵌套 mapping '
+            f'（v1.7.0 就是在这里被 WorkBuddy 拒包）：{line!r}')
+        self.assertNotIn('\t', value, f'值里不能有制表符：{line!r}')
+        self.assertNotIn(' #', value, f'值里的「空格 + #」会被当成注释截断：{line!r}')
+        self.assertFalse(value.endswith(':'), f'未加引号的值不能以冒号结尾：{line!r}')
+        if value.startswith('['):
+            self.assertTrue(value.endswith(']'), f'flow sequence 未闭合（缺 ]）：{line!r}')
+        if value.startswith('#'):
+            self.fail(f'未加引号的值不能以 # 开头（整行会被当注释）：{line!r}')
+        # 以下四类是 QA 点出的漏网写法：手搓规则集外会静默改语义，真解析器若没装就没人兜
+        if value[0] in '&*!%@`':
+            self.fail(f'值不能以 YAML 指示符 {value[0]!r} 开头'
+                      f'（会被当锚点/别名/标签/指令）：{line!r}')
+        if value.startswith('- '):
+            self.fail(f'值不能以 "- " 开头（会被当成序列项）：{line!r}')
+        if value in ('|', '>', '|-', '>-', '|+', '>+'):
+            self.fail(f'值不能是块标量指示符 {value!r}（多行写法会改变 frontmatter 结构）：{line!r}')
+        if value.startswith('? '):
+            self.fail(f'值不能以 "? " 开头（复杂键指示符）：{line!r}')
+
+    def test_frontmatter_parses_as_mapping(self):
+        """顶层是 mapping，且每个未加引号的值都不含 `: `（本次 Bug 的最小充分判据）。"""
+        seen = set()
+        for line in frontmatter_lines():
+            if not line.strip():
+                continue
+            if line.startswith((' ', '\t')):
+                if line.strip().startswith('?'):
+                    self.fail(f'frontmatter 不支持复杂键（? 前缀）：{line!r}')
+                # block sequence 的条目：剥掉 "- " 再按标量规则校验
+                item = re.sub(r'^-\s+', '', line.strip())
+                self._assert_plain_scalar_safe(item, line)
+                continue
+            m = FM_KEY.match(line)
+            self.assertIsNotNone(
+                m, f'frontmatter 顶层行无法解析为 key: value（含裸冒号、? 复杂键或缩进错乱）：'
+                   f'{line!r}')
+            key = m.group(1)
+            self.assertNotIn(key, seen, f'frontmatter 键重复，YAML 会静默取最后一个：{key}')
+            seen.add(key)
+            self._assert_plain_scalar_safe(m.group(2).strip(), line)
+        self.assertIn('name', seen)
+        self.assertIn('version', seen)
+
+    def test_frontmatter_fence_is_single_pair(self):
+        """围栏必须恰好一对、第一个 --- 在首行（三段式会让解析器错位）。"""
+        with open(SKILL_MD, encoding='utf-8') as f:
+            text = f.read()
+        self.assertGreaterEqual(text.count(FM_FENCE), 2, 'frontmatter 围栏至少要有开头与结尾')
+        lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+        self.assertEqual(lines[0].strip(), FM_FENCE, 'SKILL.md 第一行必须是 ---')
+        fences = [i + 1 for i, line in enumerate(lines) if line.strip() == FM_FENCE]
+        self.assertEqual(
+            len(fences), 2,
+            f'frontmatter 围栏应恰好一对，实际 {len(fences)} 处（行号 {fences}）：'
+            f'多出来的 --- 会被解析器当成第二个文档或新 frontmatter')
+
+    @unittest.skipUnless(yaml, '未安装 PyYAML，跳过严格解析断言')
+    def test_frontmatter_parses_with_real_yaml(self):
+        """真解析器兜底：锚点/别名/标签/块标量/复杂键等手搓规则集覆盖不到的类型。"""
+        data = yaml.safe_load(frontmatter_text())
+        self.assertIsNotNone(data, 'yaml.safe_load 返回 None：frontmatter 没被当成 mapping')
+        self.assertIsInstance(
+            data, dict, f'yaml.safe_load 解出的是 {type(data).__name__}，不是 mapping')
+        self.assertEqual(
+            len(data), self.EXPECTED_KEYS,
+            f'frontmatter 键数应为 {self.EXPECTED_KEYS}，实际 {len(data)}：{sorted(data)}')
+        self.assertEqual(sorted(data), sorted(self.REQUIRED), '解析出的键集与必需字段集不一致')
+        self.assertEqual(data['version'], qs.VERSION)
+
+    def test_required_fields_present(self):
+        """两边市场要读的 19 个键都在、类型对、内容非空。"""
+        fm = frontmatter_map()
+        self.assertEqual(len(self.REQUIRED), 19, '必需字段集固定 19 个')
+        self.assertEqual(len(self.REQUIRED), len(set(self.REQUIRED)), '必需字段集不能有重复')
+
+        for key in self.REQUIRED_SCALAR:
+            self.assertIn(key, fm, f'frontmatter 缺字段：{key}')
+            self.assertIsInstance(fm[key], str, f'{key} 应为标量字符串，实际 {fm[key]!r}')
+            self.assertTrue(fm[key].strip(), f'frontmatter 字段为空：{key}')
+
+        # 展示文案会直接渲染到 WorkBuddy / SkillHub 页面，太短多半是占位符
+        for key in ('display_name_zh', 'display_name_en', 'description_zh', 'description_en'):
+            self.assertGreaterEqual(len(fm[key]), 8, f'{key} 太短，疑似占位符：{fm[key]!r}')
+
+        # 示例列表：两边市场都在页面上逐条渲染
+        for key in self.REQUIRED_BLOCK_SEQ:
+            self.assertIn(key, fm, f'frontmatter 缺字段：{key}')
+            items = as_items(fm[key], key)
+            self.assertEqual(len(items), 4, f'{key} 应有 4 条示例，实际 {len(items)}：{items!r}')
+            for i, item in enumerate(items):
+                self.assertIsInstance(item, str, f'{key}[{i}] 应为字符串')
+                self.assertTrue(item.strip(), f'{key}[{i}] 是空字符串')
+
+        # 标签：SkillHub 首页用它做筛选与分类
+        for key in self.REQUIRED_FLOW_SEQ:
+            self.assertIn(key, fm, f'frontmatter 缺字段：{key}')
+            items = as_items(fm[key], key)
+            self.assertGreaterEqual(
+                len(items), 3, f'{key} 至少 3 项，实际 {len(items)}：{items!r}')
+            for i, item in enumerate(items):
+                self.assertTrue(item.strip(), f'{key}[{i}] 是空字符串')
+
+    def test_version_matches_script(self):
+        """SKILL.md 的 version 与主脚本 VERSION 一致（三处一致由 TestVersion 兜住）。"""
+        self.assertEqual(skill_md_version(), qs.VERSION)
+        self.assertEqual(skill_md_version(), build_pkg.VERSION)
 
 
 # ---------------------------------------------------------------- list / workspace

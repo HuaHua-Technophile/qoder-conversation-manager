@@ -9,8 +9,22 @@
 | GitHub | ✅ 已发布 v1.7.0 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。Actions run `43736889949`，`release` + `skillhub` 两个 job 全绿（16:41:32 → 16:42:11Z）；[Release](https://github.com/HuaHua-Technophile/qoder-task-manager/releases/tag/v1.7.0) 两个 zip：`dir` 87,564 B / `root` 87,146 B |
 | SkillHub（skillhub.cn） | ✅ 已发布 v1.7.0（安全审核通过） | CI 自动发布。API 实测 `latestVersion.version=1.7.0`、8 个 tag 条目（`latest` + 7 个标签）均指向 1.7.0、`category=dev-programming`、`iconUrl` 走 jsdelivr、`securityReports`（keen / sanbu）均 `benign`「安全，无风险」。**下载端点仍返回 1.6.0**（过审快照/CDN 滞后，以 API 为准） |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录（2026-11-16 复核仍 404） | 该站按 `npx skills add` 安装量索引，**无手动上传入口**；搜索页只回显查询词、无结果条目，详情页 404。仓库已是 `skills/<name>/` 布局，等它下次扫描 |
-| WorkBuddy 开放平台 | ⏳ 待更新 v1.7.0 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**。本轮自动化通道不可用（见下方「GUI 通道故障记录」），需人工上传；包已就绪：`dist/qoder-task-manager-dir-1.7.0.zip` |
-| Qoder 技能市场 | ⏳ 待提交（本地已装 1.7.0） | 公开市场走拓展发布；本机 `~/.qoder/skills/qoder-task-manager` 已 `install.py` 同步到 1.7.0 |
+| WorkBuddy 开放平台 | ⏳ 待更新 v1.7.1 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**；包已就绪：`dist/qoder-task-manager-dir-1.7.1.zip`（1.7.0 被 frontmatter 的 YAML 语法卡住，见下方「1.7.1 补发」） |
+| Qoder 技能市场 | ⏳ 待提交（本地已装 1.7.1） | 公开市场走拓展发布；本机 `~/.qoder/skills/qoder-task-manager` 用 `install.py` 同步 |
+
+### 1.7.1 补发（2026-11-16）
+
+1.7.0 对外发布后，用户在 WorkBuddy 开放平台上传 `-root-1.7.0.zip` 被拒：
+
+```
+解析失败：SKILL.md 格式错误 — frontmatter 无法解析
+（yaml: line 9: mapping values are not allowed in this context）
+```
+
+- **根因**：`description_en` 是未加引号的 plain scalar，值里含半角冒号+空格 `on a daily schedule: any task`，YAML 会把它当成嵌套 mapping 的开头。平台报的 `line 9` 是**去掉开头 `---` 之后**的行号（用 PyYAML 复现：整文件第 10 行、第 262 列）。
+- **为何一直没暴露**：SkillHub 只按正则取 camelCase 字段，从不跑 YAML 解析；WorkBuddy 渠道停更在 v1.3.3，没人传过带这段文案的包。
+- **改动**：该处改为破折号 `— any task`（**不改用加引号**：SkillHub 会把 frontmatter 值当展示文案渲染，怕引号带进页面）；新增 frontmatter lint 测试（手搓规则 + 可选 `yaml.safe_load` 严格断言）防复发；版本升 1.7.1。**功能与 1.7.0 完全一致**，重发只为让制品与「可被 WorkBuddy 解析」的包一致。
+- **待人工**：上传 `dist/qoder-task-manager-dir-1.7.1.zip`。注意 `-root` 包顶层是散开的（`SKILL.md` 直接在根），不符合平台「解压后第一层即技能目录」的要求。
 | skillstore.io / Skill Vault | ⏳ 可选 | 第三方目录，填仓库地址或上传 SKILL.md |
 
 ### v1.7.0 发布核验记录（2026-11-16）

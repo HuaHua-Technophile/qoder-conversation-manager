@@ -15,7 +15,7 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # skills/<name>/
 REPO = os.path.dirname(os.path.dirname(ROOT))                        # 仓库根
 NAME = 'qoder-task-manager'
-VERSION_FALLBACK = '1.7.0'
+VERSION_FALLBACK = '1.7.1'
 SCRIPT = os.path.join(ROOT, 'scripts', 'qoder_sessions.py')
 
 FILES = ['SKILL.md', 'README.md', 'CHANGELOG.md', 'LICENSE', 'PUBLISHING.md']

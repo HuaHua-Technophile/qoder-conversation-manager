@@ -21,7 +21,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timedelta
 
-VERSION = '1.7.0'
+VERSION = '1.7.1'
 BACKUP_KEEP = 10
 
 # ---------------------------------------------------------------- 路径与基础
