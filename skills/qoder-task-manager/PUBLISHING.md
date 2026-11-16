@@ -9,7 +9,22 @@
 | GitHub | ✅ 已发布 v1.7.1 | [仓库](https://github.com/HuaHua-Technophile/qoder-task-manager)，MIT。Actions run `43787142965`，`release`（12s）+ `skillhub` 两个 job 全绿；[Release v1.7.1](https://github.com/HuaHua-Technophile/qoder-task-manager/releases/tag/v1.7.1) 资产 `dir` 90,122 B / `root` 89,704 B，**与本地 `dist/` 同名包内容逐字节一致**（11 条目 sha256 全等） |
 | SkillHub（skillhub.cn） | ✅ 已提交 v1.7.1（审核中） | CI 自动发布成功：`stats.versions` 7 → **8**、8 个 tag 条目唯一值均为 **1.7.1**。`latestVersion` 仍回 **1.7.0**（该字段按「已过审版本」计算，审核通过后才刷新，属已知滞后）。1.7.0 时的实测可作参考：`category=dev-programming`、`iconUrl` 走 jsdelivr、`securityReports`（keen / sanbu）均 `benign`「安全，无风险」 |
 | skills.sh（Vercel Labs 目录） | ⚠️ 未收录（2026-11-16 复核仍 404） | 该站按 `npx skills add` 安装量索引，**无手动上传入口**；搜索页只回显查询词、无结果条目，详情页 404。仓库已是 `skills/<name>/` 布局，等它下次扫描 |
-| WorkBuddy 开放平台 | ⏳ 待更新 v1.7.1 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**；包已就绪：`dist/qoder-task-manager-dir-1.7.1.zip`（1.7.0 被 frontmatter 的 YAML 语法卡住，见下方「1.7.1 补发」） |
+| WorkBuddy 开放平台 | ⏳ 待更新 v1.7.2 | 能力 ID `os_f2f623a10e63b114`，公开。**无 API/CLI，只能手动上传 `-dir` 包**；包已就绪：`dist/qoder-task-manager-dir-1.7.2.zip`（1.7.0 卡在 frontmatter YAML、1.7.1 卡在示例数超限，见下方「1.7.1 / 1.7.2 补发」） |
+
+### 1.7.2 补发（2026-11-16）
+
+1.7.1 的包 YAML 已能解析，同一次上传卡在下一道字段校验：
+
+```
+解析失败：
+examples_zh 最多 3 个示例，当前 4 个
+examples_en 最多 3 个示例，当前 4 个
+```
+
+- **平台限制**：`examples_zh` / `examples_en` **最多 3 条**（官方文档只给字段表、没写数量上限，是校验器实测出来的）。
+- **改动**：中英各裁到 3 条，保留「批量重命名 / 定时自动整理 / 迁移到工作区」，去掉健康体检那条（`doctor` 在正文与命令总览里仍有完整说明）。
+- **把上限写进测试**：`test_required_fields_present` 从「恰好 4 条」改为「1 ≤ 条数 ≤ 3」，加第 4 条本地就红（已反向验证），不必等上传到平台才发现。
+- **校验是分层的**：1.7.1 先报 YAML 语法，修好后同一次上传才轮到字段数量。所以「改一点、传一次」是正常节奏，不是包坏了。
 | Qoder 技能市场 | ⏳ 待提交（本地已装 1.7.1） | 公开市场走拓展发布；本机 `~/.qoder/skills/qoder-task-manager` 用 `install.py` 同步 |
 
 ### 1.7.1 补发（2026-11-16）

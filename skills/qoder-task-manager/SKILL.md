@@ -15,14 +15,12 @@ examples_zh:
   - "把标题太短的 Qoder 任务批量重命名"
   - "每天帮我自动整理 Qoder 任务标题，挂个定时任务"
   - "把 NAS 相关的任务都归到 NAS 工作区，附件和产出一起带过去"
-  - "给 Qoder 做一次体检，看工作区路径和备份有没有异常"
 examples_en:
   - "Batch rename Qoder tasks whose titles are too short"
   - "Set up a daily job that keeps Qoder task titles tidy"
   - "Move all NAS-related tasks into the NAS workspace, files included"
-  - "Run a health check on Qoder and report workspace or backup problems"
 author: HuaHua
-version: 1.7.1
+version: 1.7.2
 tags: [Qoder, 任务管理, 重命名, 工作区, SQLite, 定时任务, 自动化]
 license: MIT
 homepage: https://github.com/HuaHua-Technophile/qoder-task-manager

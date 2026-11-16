@@ -759,7 +759,10 @@ class TestVersion(unittest.TestCase):
         skill_version = skill_md_version()
         self.assertEqual(script_version, build_pkg.VERSION)
         self.assertEqual(script_version, skill_version)
-        self.assertEqual(script_version, '1.7.1')
+        # 不钉具体版本号（那样每发一版都要改测试，纯维护税），只钉格式：
+        # 发布平台按 x.y.z 排序，tag 校验也要求与之相等。
+        self.assertRegex(script_version, r'^\d+\.\d+\.\d+$',
+                         f'版本号应为 x.y.z 形式，实际 {script_version!r}')
 
 
 class TestSkillFrontmatter(unittest.TestCase):
@@ -877,11 +880,16 @@ class TestSkillFrontmatter(unittest.TestCase):
         for key in ('display_name_zh', 'display_name_en', 'description_zh', 'description_en'):
             self.assertGreaterEqual(len(fm[key]), 8, f'{key} 太短，疑似占位符：{fm[key]!r}')
 
-        # 示例列表：两边市场都在页面上逐条渲染
+        # 示例列表：两边市场都在页面上逐条渲染。
+        # WorkBuddy 开放平台硬限制「最多 3 个示例」，第 4 条会让 zip 解析失败
+        # （实测报错：examples_zh 最多 3 个示例，当前 4 个），所以这里钉上限而不只是钉下限。
         for key in self.REQUIRED_BLOCK_SEQ:
             self.assertIn(key, fm, f'frontmatter 缺字段：{key}')
             items = as_items(fm[key], key)
-            self.assertEqual(len(items), 4, f'{key} 应有 4 条示例，实际 {len(items)}：{items!r}')
+            self.assertGreaterEqual(len(items), 1, f'{key} 至少要有 1 条示例')
+            self.assertLessEqual(
+                len(items), 3,
+                f'{key} 最多 3 条示例（WorkBuddy 开放平台限制），实际 {len(items)}：{items!r}')
             for i, item in enumerate(items):
                 self.assertIsInstance(item, str, f'{key}[{i}] 应为字符串')
                 self.assertTrue(item.strip(), f'{key}[{i}] 是空字符串')
